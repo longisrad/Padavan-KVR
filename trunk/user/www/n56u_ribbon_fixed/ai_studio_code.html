@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title><#Web_Title#> - AdGuard Home</title>
+<!-- ... (headers giữ nguyên) ... -->
+</head>
+<body onload="initial();" onunLoad="return unload_body();">
+<div class="wrapper">
+	<!-- ... (banner/menu giữ nguyên) ... -->
+	<div class="span9">
+		<div class="row-fluid">
+			<div class="span12">
+				<div class="box well grad_colour_dark_blue">
+					<h2 class="box_head round_top">Services - AdGuard Home</h2>
+					<div class="round_bottom">
+						<div class="alert alert-info" style="margin: 10px;">
+							<p>AdGuard Home is a network-wide software for blocking ads and tracking. Once set up, it protects all your home devices without needing any client software. With the rise of IoT and connected devices, controlling your network environment is increasingly important.</p>
+							<a href="https://adguard.com/en/adguard-home/overview.html" target="blank">AdGuard Home Homepage</a>
+							, Project: <a href="https://github.com/AdguardTeam/AdGuardHome" target="blank">GitHub</a>
+							, Notes: ① Installation requires 30MB+ space ② Default login: admin ③ To change password, edit auth_name and auth_pass in the script below ④ <a href="https://www.jisuan.mobi/nX7.html" target="blank">Online Hash Generator</a>
+						</div>
+
+						<table width="100%" align="center" cellpadding="4" cellspacing="0" class="table">
+							<tr>
+								<th width="30%" style="border-top: 0 none;">Enable AdGuardHome</th>
+								<td style="border-top: 0 none;">
+									<!-- ... (itoggle logic) ... -->
+								</td>
+							</tr>
+							<tr>
+								<th><a class="help_tooltip" href="javascript: void(0)">DNS Redirection</a></th>
+								<td>
+									<select name="adg_redirect" class="input" style="width: 200px">
+										<option value="0">None</option>
+										<option value="1">As dnsmasq upstream server</option>
+										<option value="2">Redirect port 53 to AdGuardHome</option>
+									</select>
+								</td>
+							</tr>
+							<tr>
+								<th>Web Admin Address:</th>
+								<td><a href="http://<% nvram_get_x("", "lan_ipaddr"); %>:3030">http://<% nvram_get_x("", "lan_ipaddr"); %>:3030</a></td>
+							</tr>
+							<tr id="row_post_wan_script">
+								<td colspan="2">
+									<i class="icon-hand-right"></i> <a href="javascript:spoiler_toggle('script2')"><span>ADG Config Parameters (DO NOT EDIT UNLESS NECESSARY)</span></a>
+									<div id="script2">
+										<textarea rows="18" ... name="scripts.adg.sh"><% nvram_dump("scripts.adg.sh",""); %></textarea>
+									</div>
+								</td>
+							</tr>
+							<tr>
+								<td colspan="2" style="border-top: 0 none;"><center><input class="btn btn-primary" ... value="Apply" onclick="applyRule()" /></center></td>
+							</tr>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+</body>
+</html>
