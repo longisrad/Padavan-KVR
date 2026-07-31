@@ -10,7 +10,7 @@ no-resolv
 server=127.0.0.1#5335
 EOF
 /sbin/restart_dhcpd
-logger -t "【AdGuardHome】" "添加DNS转发到5335端口"
+logger -t "【AdGuardHome】" "Added DNS forwarding to port 5335"
 fi
 }
 
@@ -35,7 +35,7 @@ set_iptable() {
     ip6tables -t nat -A PREROUTING -p tcp -d $IP --dport 53 -j REDIRECT --to-ports 5335 >/dev/null 2>&1
     ip6tables -t nat -A PREROUTING -p udp -d $IP --dport 53 -j REDIRECT --to-ports 5335 >/dev/null 2>&1
   done
-    logger -t "【AdGuardHome】" "重定向53端口"
+    logger -t "【AdGuardHome】" "Redirected port 53"
     fi
 }
 
@@ -97,7 +97,7 @@ if [ "$1" = "x" ] ; then
 	if [ "$adg_renum" -gt "3" ] ; then
 		I=19
 		echo $I > $relock
-		logger -t "【AdGuardHome】" "多次尝试启动失败，等待【"`cat $relock`"分钟】后自动尝试重新启动"
+		logger -t "【AdGuardHome】" "Multiple start attempts failed, waiting 【"`cat $relock`" min】 before auto-retry"
 		while [ $I -gt 0 ]; do
 			I=$(($I - 1))
 			echo $I > $relock
@@ -136,7 +136,7 @@ get_tag() {
 	user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
 	curltest=`which curl`
-	logger -t "【AdGuardHome】" "开始获取最新版本..."
+	logger -t "【AdGuardHome】" "Fetching latest version..."
     	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
       		tag="$( wget --no-check-certificate -T 5 -t 3 --user-agent "$user_agent" --output-document=-  https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
 	 	[ -z "$tag" ] && tag="$( wget --no-check-certificate -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=-  https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest  2>&1 | grep 'tag_name' | cut -d\" -f4 )"
@@ -144,52 +144,52 @@ get_tag() {
       		tag="$( curl -k --connect-timeout 3 --user-agent "$user_agent"  https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
        	[ -z "$tag" ] && tag="$( curl -Lk --connect-timeout 3 --user-agent "$user_agent" -s  https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest  2>&1 | grep 'tag_name' | cut -d\" -f4 )"
         fi
-	[ -z "$tag" ] && logger -t "【AdGuardHome】" "无法获取最新版本" && tag="v0.107.54"
+	[ -z "$tag" ] && logger -t "【AdGuardHome】" "Could not fetch latest version" && tag="v0.107.54"
 
 }
-github_proxys="$(nvram get github_proxy)"
-[ -z "$github_proxys" ] && github_proxys=" "
+github_proxys="$(nvram get github_proxy) DIRECT"
 
 dl_adg() {
 	find_bin
 	if [ ! -f "$SVC_PATH" ] ; then
-		logger -t "【AdGuardHome】" "找不到 $SVC_PATH ，下载 AdGuardHome 程序"
+		logger -t "【AdGuardHome】" "$SVC_PATH not found, downloading AdGuardHome"
 		get_tag
   		adg_path=$(dirname "$SVC_PATH")
     		[ ! -d "$adg_path" ] && mkdir -p "$adg_path"
-		logger -t "【AdGuardHome】" "下载${tag}版本 下载较慢，耐心等待"
+		logger -t "【AdGuardHome】" "Downloading version ${tag}, this may be slow, please wait"
 		for proxy in $github_proxys ; do
-  			length=$(wget --no-check-certificate -T 5 -t 3 "${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz" -O /dev/null --spider --server-response 2>&1 | grep "[Cc]ontent-[Ll]ength" | grep -Eo '[0-9]+' | tail -n 1)
+  			[ "$proxy" = "DIRECT" ] && proxy=""
+  			length=$(wget --no-check-certificate -T 10 -t 3 "${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz" -O /dev/null --spider --server-response 2>&1 | grep "[Cc]ontent-[Ll]ength" | grep -Eo '[0-9]+' | tail -n 1)
  			length=`expr $length + 512000`
 			length=`expr $length / 1048576`
  			adg_size0="$(check_disk_size $adg_path)"
- 			[ ! -z "$length" ] && logger -t "【AdGuardHome】" "程序大小 ${length}M， 程序路径可用空间 ${adg_size0}M "
-			curl -Lkso "/tmp/AdGuardHome/AdGuardHome.tar.gz" "${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz" || wget --no-check-certificate -q -O "/tmp/AdGuardHome/AdGuardHome.tar.gz" "${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz"
+ 			[ ! -z "$length" ] && logger -t "【AdGuardHome】" "Program size ${length}M, free space at program path ${adg_size0}M "
+			curl -Lkso "/tmp/AdGuardHome/AdGuardHome.tar.gz" --connect-timeout 10 --retry 2 --max-time 90 "${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz" || wget --no-check-certificate -T 15 -t 2 -q -O "/tmp/AdGuardHome/AdGuardHome.tar.gz" "${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz"
 			if [ "$?" = 0 ] ; then
 				tar -xzvf /tmp/AdGuardHome/AdGuardHome.tar.gz -C $adg_path
     				rm -f /tmp/AdGuardHome/AdGuardHome.tar.gz
-		 		cd ${adg_path} ; rm -f ./LICENSE.txt./README.md ./CHANGELOG.md ./AdGuardHome.sig
+		 		cd ${adg_path} ; rm -f ./LICENSE.txt ./README.md ./CHANGELOG.md ./AdGuardHome.sig
 		 		chmod +x $SVC_PATH
 				if [[ "$($SVC_PATH -h 2>&1 | wc -l)" -gt 3 ]] ; then
-					logger -t "【AdGuardHome】" "$SVC_PATH 下载成功"
+					logger -t "【AdGuardHome】" "$SVC_PATH downloaded successfully"
 					break
        				else
-	   				logger -t "【AdGuardHome】" "下载不完整"
+	   				logger -t "【AdGuardHome】" "Download incomplete"
 					rm -f $SVC_PATH
 	  			fi
 	  		else
-	  			logger -t "【AdGuardHome】" "下载失败，请手动下载 ${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz 解压上传到 $SVC_PATH"
+	  			logger -t "【AdGuardHome】" "Download failed, please manually download ${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz then extract and upload to $SVC_PATH"
 		 	fi
 		done
 	fi     
 }
 
 adg_keep() {
-	logger -t "【AdGuardHome】" "守护进程启动"
+	logger -t "【AdGuardHome】" "Watchdog started"
 	if [ -s /tmp/script/_opt_script_check ]; then
 	sed -Ei '/【AdGuardHome】|^$/d' /tmp/script/_opt_script_check
 	cat >> "/tmp/script/_opt_script_check" <<-OSC
-	[ -z "\`pidof AdGuardHome\`" ] && logger -t "进程守护" "AdGuardHome 进程掉线" && eval "$scriptfilepath start &" && sed -Ei '/【AdGuardHome】|^$/d' /tmp/script/_opt_script_check #【AdGuardHome】
+	[ -z "\`pidof AdGuardHome\`" ] && logger -t "Process Watchdog" "AdGuardHome process dropped" && eval "$scriptfilepath start &" && sed -Ei '/【AdGuardHome】|^$/d' /tmp/script/_opt_script_check #【AdGuardHome】
 	OSC
 
 	fi
@@ -199,7 +199,7 @@ adg_keep() {
 start_adg() {
   mkdir -p /tmp/AdGuardHome
   mkdir -p /etc/storage/AdGuardHome
-  logger -t "【AdGuardHome】" "正在启动..."
+  logger -t "【AdGuardHome】" "Starting..."
   sed -Ei '/【AdGuardHome】|^$/d' /tmp/script/_opt_script_check
   find_bin
   [ ! -x "$SVC_PATH" ] && chmod +x $SVC_PATH
@@ -212,20 +212,20 @@ start_adg() {
   getconfig
   change_dns
   set_iptable
-  logger -t "【AdGuardHome】" "运行 $SVC_PATH"
+  logger -t "【AdGuardHome】" "Running $SVC_PATH"
   [ ! -x "$SVC_PATH" ] && chmod +x $SVC_PATH
   eval "$SVC_PATH -c $adg_file -w /tmp/AdGuardHome -v" &
   sleep 4
   	if [ ! -z "`pidof AdGuardHome`" ] ; then
  		mem=$(cat /proc/$(pidof AdGuardHome)/status | grep -w VmRSS | awk '{printf "%.1f MB", $2/1024}')
    		cpui="$(top -b -n1 | grep -E "$(pidof AdGuardHome)" 2>/dev/null| grep -v grep | awk '{for (i=1;i<=NF;i++) {if ($i ~ /AdGuardHome/) break; else cpu=i}} END {print $cpu}')"
-		logger -t "【AdGuardHome】" "运行成功！"
-  		logger -t "【AdGuardHome】" "内存占用 ${mem} CPU占用 ${cpui}%"
+		logger -t "【AdGuardHome】" "Running successfully!"
+  		logger -t "【AdGuardHome】" "Memory usage ${mem}  CPU usage ${cpui}%"
   		adg_restart o
 		echo `date +%s` > /tmp/vntcli_time
 		vnt_rules
 	else
-		logger -t "【AdGuardHome】" "运行失败, 注意检查${VNTCLI}是否下载完整,10 秒后自动尝试重新启动"
+		logger -t "【AdGuardHome】" "Failed to run, check if ${VNTCLI} downloaded completely, auto-retry in 10 seconds"
   		sleep 10
   		adg_restart x
 	fi
@@ -242,7 +242,7 @@ killall -9 AdGuardHome
 killall AdGuardHome
 del_dns
 clear_iptable
-logger -t "【AdGuardHome】" "关闭AdGuardHome"
+logger -t "【AdGuardHome】" "Stopping AdGuardHome"
 if [ ! -z "$scriptname" ] ; then
 	eval $(ps -w | grep "$scriptname" | grep -v $$ | grep -v grep | awk '{print "kill "$1";";}')
 	eval $(ps -w | grep "$scriptname" | grep -v $$ | grep -v grep | awk '{print "kill -9 "$1";";}')
