@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title><#Web_Title#> - WireGuard</title>
+<!-- ... -->
+</head>
+<body onload="initial();" onunLoad="return unload_body();">
+<div class="wrapper">
+	<!-- ... -->
+	<div class="span9">
+		<div class="row-fluid">
+			<div class="span12">
+				<div class="box well grad_colour_dark_blue">
+					<h2 class="box_head round_top">VPN Tools - WireGuard</h2>
+					<div class="round_bottom">
+						<div class="alert alert-info" style="margin: 10px;">
+							<p>WireGuard is an extremely simple yet fast and modern VPN that utilizes state-of-the-art cryptography.</p>
+						</div>
+						<table width="100%" align="center" cellpadding="4" cellspacing="0" class="table">
+							<tr>
+								<th width="30%" style="border-top: 0 none;">Enable WireGuard</th>
+								<td style="border-top: 0 none;">
+									<!-- ... -->
+								</td>
+								<td style="border-top: 0 none;">
+									<input class="btn btn-success" style="width:150px" type="button" value="Restart" onclick="button_restartwg()" />
+								</td>
+							</tr>
+							<tr>
+								<th style="border-top: 0 none;">Interface IPv4</th>
+								<td style="border-top: 0 none;">
+									<input type="text" ... name="wireguard_localip" value="<% nvram_get_x("","wireguard_localip"); %>" />
+									&nbsp;<span style="color:#888;">(Format: 10.0.0.2/24)</span>
+								</td>
+							</tr>
+							<tr>
+								<th style="border-top: 0 none;">Interface IPv6</th>
+								<td style="border-top: 0 none;">
+									<input type="text" ... name="wireguard_localip6" value="<% nvram_get_x("","wireguard_localip6"); %>" />
+									&nbsp;<span style="color:#888;">(Format: fd69::1/64)</span>
+								</td>
+							</tr>
+							<tr>
+								<th style="border-top: 0 none;">Custom Interface</th>
+								<td style="border-top: 0 none;">
+									<input type="text" ... placeholder="wg0" name="wireguard_tun" value="<% nvram_get_x("","wireguard_tun"); %>" />
+								</td>
+							</tr>
+							<tr>
+								<th style="border-top: 0 none;">Custom MTU</th>
+								<td style="border-top: 0 none;">
+									<input type="text" ... placeholder="1420" name="wireguard_mtu" value="<% nvram_get_x("","wireguard_mtu"); %>" />
+								</td>
+							</tr>
+							<tr>
+								<td colspan="5" style="border-top: 0 none;">
+									<i class="icon-hand-right"></i> <a href="javascript:spoiler_toggle('scripts.wireguard')"><span>Edit /etc/storage/wg0.conf config file</span></a>
+									<div id="scripts.wireguard" style="display:none;">
+										<textarea name="scripts.wg0.conf" ...><% nvram_dump("scripts.wg0.conf",""); %></textarea>
+										<div>⚠️&nbsp;&nbsp;<span style="color: #ff8100;">Notice:</span><span style="color:#888;"> Post-scripts and custom DNS are not supported in this config. Online generator: <a href="https://www.wireguardconfig.com/" target="blank">Click here</a></span></div>
+									</div>
+								</td>
+							</tr>
+							<tr>
+								<td colspan="4" style="border-top: 0 none;"><center><input class="btn btn-primary" ... value="Apply" onclick="applyRule()" /></center></td>
+							</tr>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+</body>
+</html>
