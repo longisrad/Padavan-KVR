@@ -148,7 +148,7 @@ function done_validating(action){
 								<div class="row-fluid">
 									<div id="tabMenu" class="submenuBlock"></div>
 									<div class="alert alert-info" style="margin: 10px;">
-									<p>WireGuard 是一个易于配置、快速且安全的开源VPN<br>
+									<p>WireGuard is an easy-to-configure, fast, and secure open-source VPN<br>
 									</p>
 									</div>
 
@@ -158,7 +158,7 @@ function done_validating(action){
 
 
 										<td colspan="5"></td><tr>
-										<th width="30%" style="border-top: 0 none;">启用wireguard</th>
+										<th width="30%" style="border-top: 0 none;">Enable WireGuard</th>
 											<td style="border-top: 0 none;">
 													<div class="main_itoggle">
 													<div id="wireguard_enable_on_of">
@@ -171,42 +171,42 @@ function done_validating(action){
 												</div>
 											</td>
 											<td style="border-top: 0 none;">
-												<input class="btn btn-success" style="width:150px" type="button" name="restartwg" value="重启" onclick="button_restartwg()" />
+												<input class="btn btn-success" style="width:150px" type="button" name="restartwg" value="Restart" onclick="button_restartwg()" />
 												</td>
 
 										</tr><td colspan="5"></td>
 										<tr>
-										<th style="border-top: 0 none;">接口IPV4</th>
+										<th style="border-top: 0 none;">Interface IPv4</th>
 										<td style="border-top: 0 none;">
 											<input type="text" class="input" name="wireguard_localip" id="wireguard_localip" style="width: 200px" value="<% nvram_get_x("","wireguard_localip"); %>" />
-										&nbsp;<span style="color:#888;">（格式 10.0.0.2/24）</span>
+										&nbsp;<span style="color:#888;">(format 10.0.0.2/24)</span>
 										</td>
 										</tr><td colspan="5"></td>
 										<tr>
-										<th style="border-top: 0 none;">接口IPV6</th>
+										<th style="border-top: 0 none;">Interface IPv6</th>
 										<td style="border-top: 0 none;">
 											<input type="text" class="input" name="wireguard_localip6" id="wireguard_localip6" style="width: 200px" value="<% nvram_get_x("","wireguard_localip6"); %>" />
-										&nbsp;<span style="color:#888;">（格式 fd69::1/64）</span>
+										&nbsp;<span style="color:#888;">(format fd69::1/64)</span>
 										</td>
 										</tr><td colspan="5"></td>
 										<tr>
-										<th style="border-top: 0 none;">自定义接口</th>
+										<th style="border-top: 0 none;">Custom Interface</th>
 										<td style="border-top: 0 none;">
 												<input type="text" maxlength="20" class="input" name="wireguard_tun" placeholder="wg0" id="wireguard_tun" style="width: 200px" value="<% nvram_get_x("","wireguard_tun"); %>" />
 										</td>
 										</tr><td colspan="5"></td>
 										<tr>
-										<th style="border-top: 0 none;">自定义MTU </th>
+										<th style="border-top: 0 none;">Custom MTU </th>
 										<td style="border-top: 0 none;">
 											<input type="text" maxlength="4" class="input" name="wireguard_mtu" placeholder="1420" id="wireguard_mtu" style="width: 200px" value="<% nvram_get_x("","wireguard_mtu"); %>" />
 										</td>
 										</tr><td colspan="5"></td>
 										<tr>
 										<td colspan="5" style="border-top: 0 none;">
-											<i class="icon-hand-right"></i> <a href="javascript:spoiler_toggle('scripts.wireguard')"><span>点此编辑 /etc/storage/wg0.conf 配置文件</span></a>
+											<i class="icon-hand-right"></i> <a href="javascript:spoiler_toggle('scripts.wireguard')"><span>Click to edit /etc/storage/wg0.conf config file</span></a>
 										<div id="scripts.wireguard" style="display:none;">
 											<textarea rows="18" wrap="off" spellcheck="false" maxlength="209715" class="span12" name="scripts.wg0.conf" style="font-family:'Courier New'; font-size:12px; height: 200px;""><% nvram_dump("scripts.wg0.conf",""); %></textarea>
-											<div>⚠️&nbsp;&nbsp;<span style="color: #ff8100;">注意：</span><span style="color:#888;">配置文件里不支持Post脚本规则和指定接口IP和DNS&nbsp;&nbsp;&nbsp;&nbsp;在线生成配置文件：<a href="https://www.wireguardconfig.com/" target="blank">点此</a></span></div>
+											<div>⚠️&nbsp;&nbsp;<span style="color: #ff8100;">Note: </span><span style="color:#888;">The config file does not support PostUp/PostDown script rules or specifying interface IP/DNS&nbsp;&nbsp;&nbsp;&nbsp;Generate config online: <a href="https://www.wireguardconfig.com/" target="blank">click here</a></span></div>
 										</div>
 										</td>
 										</tr><td colspan="4"></td>

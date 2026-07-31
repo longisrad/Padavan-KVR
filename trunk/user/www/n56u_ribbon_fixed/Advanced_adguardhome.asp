@@ -136,16 +136,16 @@ function done_validating(action){
 								<div class="row-fluid">
 									<div id="tabMenu" class="submenuBlock"></div>
 									<div class="alert alert-info" style="margin: 10px;">
-									<p>AdGuard Home 是一款全网广告拦截与反跟踪软件。在您将其安装完毕后，它将保护您所有家用设备，同时您不再需要安装任何客户端软件。随着物联网与连接设备的兴起，掌控您自己的整个网络环境变得越来越重要。
+									<p>AdGuard Home is a network-wide ad blocker and anti-tracking tool. Once installed, it protects all your home devices without needing any client software. As IoT and connected devices grow, controlling your entire network environment matters more than ever.
 									</p>
-									<a href="https://adguard.com/zh_cn/adguard-home/overview.html" target="blank">AdGuard 主页</a>
-									,项目地址：<a href="https://github.com/AdguardTeam/AdGuardHome" target="blank">https://github.com/AdguardTeam/AdGuardHome</a>
-									,备注：①安装需要 30M+ 的空间 ②默认帐号密码：admin  ③ 修改密码下方adg.sh的第四五行auth_name:账号 auth_pass:填写转换后的密码 ④ <a href="https://www.jisuan.mobi/nX7.html" target="blank">在线密码生成计算器</a>
+									<a href="https://adguard.com/zh_cn/adguard-home/overview.html" target="blank">AdGuard Homepage</a>
+									, Project page: <a href="https://github.com/AdguardTeam/AdGuardHome" target="blank">https://github.com/AdguardTeam/AdGuardHome</a>
+									, Notes: ① Requires 30M+ free space ② Default account/password: admin ③ To change password, edit lines 4-5 of adg.sh below: auth_name:username auth_pass:paste the hashed password ④ <a href="https://www.jisuan.mobi/nX7.html" target="blank">Online password hash generator</a>
 									</div>
 
 									<table width="100%" align="center" cellpadding="4" cellspacing="0" class="table">
 										<tr>
-											<th width="30%" style="border-top: 0 none;">启用AdGuardHome</th>
+											<th width="30%" style="border-top: 0 none;">Enable AdGuardHome</th>
 											<td style="border-top: 0 none;">
 													<div class="main_itoggle">
 													<div id="adg_enable_on_of">
@@ -160,17 +160,17 @@ function done_validating(action){
 										</tr>
 										</tr>
                                          <tr>
-											<th><a class="help_tooltip" href="javascript: void(0)" onmouseover="openTooltip(this, 1, 1);">DNS重定向</a></th>
+											<th><a class="help_tooltip" href="javascript: void(0)" onmouseover="openTooltip(this, 1, 1);">DNS Redirect</a></th>
 											<td>
 												<select name="adg_redirect" class="input" style="width: 200px">
-													<option value="0" <% nvram_match_x("","adg_redirect", "0","selected"); %>>无</option>
-													<option value="1" <% nvram_match_x("","adg_redirect", "1","selected"); %>>作为dnsmasq的上游服务器</option>
-													<option value="2" <% nvram_match_x("","adg_redirect", "2","selected"); %>>重定向53端口到AdGuardHome</option>
+													<option value="0" <% nvram_match_x("","adg_redirect", "0","selected"); %>>None</option>
+													<option value="1" <% nvram_match_x("","adg_redirect", "1","selected"); %>>As dnsmasq upstream server</option>
+													<option value="2" <% nvram_match_x("","adg_redirect", "2","selected"); %>>Redirect port 53 to AdGuardHome</option>
 												</select>
 											</td>
 										</tr>
 										<tr>
-											<th>WEB管理地址:</th>
+											<th>Web Admin Address:</th>
 											<td>
 											<a href="http://<% nvram_get_x("", "lan_ipaddr"); %>:3030">http://<% nvram_get_x("", "lan_ipaddr"); %>:3030</a>
 											</td>
@@ -178,7 +178,7 @@ function done_validating(action){
 										
 <tr id="row_post_wan_script">
 											<td colspan="2">
-												<i class="icon-hand-right"></i> <a href="javascript:spoiler_toggle('script2')"><span>adg配置参数-不懂请不要乱改！！！</span></a>
+												<i class="icon-hand-right"></i> <a href="javascript:spoiler_toggle('script2')"><span>adg config parameters - do not modify if unsure!!!</span></a>
 												<div id="script2">
 													<textarea rows="18" wrap="off" spellcheck="false" maxlength="314571" class="span12" name="scripts.adg.sh" style="font-family:'Courier New'; font-size:12px;"><% nvram_dump("scripts.adg.sh",""); %></textarea>
 												</div>
