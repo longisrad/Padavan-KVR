@@ -443,25 +443,25 @@ if (found_app_aldriver()){
 	tabtitle[20] = new Array("", "<#menu5_36_1#>");
 }
 if (found_app_uuplugin()){
-	tabtitle[21] = new Array("", "UU Accelerator");
+	tabtitle[21] = new Array("", "UU加速器");
 }
 if (found_app_lucky()){
 	tabtitle[22] = new Array("", "Lucky");
 }
 if (found_app_wxsend()){
-	tabtitle[23] = new Array("", "WeChat Push");
+	tabtitle[23] = new Array("", "微信推送");
 }
 if (found_app_cloudflared()){
 	tabtitle[24] = new Array("", "CloudFlared");
 }
 if (found_app_vnts()){
-	tabtitle[25] = new Array("", "VNT Server");
+	tabtitle[25] = new Array("", "VNT服务器");
 }
 if (found_app_vntcli()){
-	tabtitle[26] = new Array("", "VNT Client");
+	tabtitle[26] = new Array("", "VNT客户端");
 }
 if (found_app_natpierce()){
-	tabtitle[27] = new Array("", "NatPierce");
+	tabtitle[27] = new Array("", "皎月连");
 }
 if (found_app_tailscale()){
 	tabtitle[28] = new Array("", "Tailscale");
@@ -470,13 +470,13 @@ if (found_app_alist()){
 	tabtitle[29] = new Array("", "Alist");
 }
 if (found_app_cloudflare()){
-	tabtitle[30] = new Array("", "Cloudflare DDNS");
+	tabtitle[30] = new Array("", "CF域名解析");
 }
 if (found_app_easytier()){
 	tabtitle[31] = new Array("", "EasyTier");
 }
 if (found_app_bafa()){
-	tabtitle[32] = new Array("", "Bemfa Cloud");
+	tabtitle[32] = new Array("", "巴法云");
 }
 if (found_app_virtualhere()){
 	tabtitle[33] = new Array("", "VirtualHere");
@@ -671,7 +671,7 @@ if (found_app_aldriver()){
 } else menuL2_title.push("");
 
 if (found_app_uuplugin()){
-	menuL2_title.push("UU Accelerator");
+	menuL2_title.push("UU加速器");
 } else menuL2_title.push("");
 
 if (found_app_lucky()){
@@ -679,7 +679,7 @@ if (found_app_lucky()){
 } else menuL2_title.push("");
 
 if (found_app_wxsend()){
-	menuL2_title.push("WeChat Push");
+	menuL2_title.push("微信推送");
 } else menuL2_title.push("");
 
 if (found_app_cloudflared()){
@@ -687,15 +687,15 @@ if (found_app_cloudflared()){
 } else menuL2_title.push("");
 
 if (found_app_vnts()){
-	menuL2_title.push("VNT Server");
+	menuL2_title.push("VNT服务器");
 } else menuL2_title.push("");
 
 if (found_app_vntcli()){
-	menuL2_title.push("VNT Client");
+	menuL2_title.push("VNT客户端");
 } else menuL2_title.push("");
 
 if (found_app_natpierce()){
-	menuL2_title.push("NatPierce");
+	menuL2_title.push("皎月连");
 } else menuL2_title.push("");
 
 if (found_app_tailscale()){
@@ -707,7 +707,7 @@ if (found_app_alist()){
 } else menuL2_title.push("");
 
 if (found_app_cloudflare()){
-	menuL2_title.push("Cloudflare DDNS");
+	menuL2_title.push("CF域名解析");
 } else menuL2_title.push("");
 
 if (found_app_easytier()){
@@ -715,7 +715,7 @@ if (found_app_easytier()){
 } else menuL2_title.push("");
 
 if (found_app_bafa()){
-	menuL2_title.push("Bemfa Cloud");
+	menuL2_title.push("巴法云");
 } else menuL2_title.push("");
 
 if (found_app_virtualhere()){
@@ -1608,11 +1608,11 @@ function showClockLogArea(){
         let hours = checkTime(JS_timeObj.getHours());
         let minutes = checkTime(JS_timeObj.getMinutes());
         let seconds = checkTime(JS_timeObj.getSeconds());
-	const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+	const days = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
 	let day = days[JS_timeObj.getDay()];
 	let timezoneInfo = `GMT${timezone}`;
 	    
-        JS_timeObj2 = `${day}, ${month}/${date}/${year}  ${hours}:${minutes}:${seconds}  ${timezoneInfo}`;
+        JS_timeObj2 = `${year}年 ${month}月 ${date}日 ${day}  ${hours}:${minutes}:${seconds}  ${timezoneInfo}`;
     }
 	
     jQuery("#system_time_log_area").html(JS_timeObj2);
@@ -1691,7 +1691,7 @@ function removeFromLocalStorage(name){
         localStorage.removeItem(name);
     }
 }
-//Custom WEB menu
+//WEB自定义菜单
 var w_ai = '<% nvram_get_x("", "w_ai"); %>';
 var w_vpn_s = '<% nvram_get_x("", "w_vpn_s"); %>';
 var w_vpn_c = '<% nvram_get_x("", "w_vpn_c"); %>';
