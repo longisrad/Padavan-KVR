@@ -23,27 +23,6 @@ scriptfilepath=$(cd "$(dirname "$0")"; pwd)/$(basename $0)
 [ ! -d /etc/storage/tailscale ] && mkdir -p /etc/storage/tailscale
 tailscale_renum=`nvram get tailscale_renum`
 
-BUNDLED_TS_BIN="/etc/tailscaled.bin"
-
-extract_bundled_ts() {
-	if [ -f "$BUNDLED_TS_BIN" ] ; then
-		bin_path=$(dirname "$tailscaled")
-		[ ! -d "$bin_path" ] && mkdir -p "$bin_path"
-		logger -t "【Tailscale】" "Found bundled tailscaled in firmware, copying to RAM..."
-		cp "$BUNDLED_TS_BIN" "$tailscaled"
-		chmod +x "$tailscaled"
-		if [[ "$($tailscaled -h 2>&1 | wc -l)" -gt 3 ]] ; then
-			logger -t "【Tailscale】" "Bundled tailscaled extracted successfully"
-			return 0
-		else
-			logger -t "【Tailscale】" "Bundled file corrupt, falling back to network download"
-			rm -f "$tailscaled"
-			return 1
-		fi
-	fi
-	return 1
-}
-
 ts_restart () {
 relock="/var/lock/tailscale_restart.lock"
 if [ "$1" = "o" ] ; then
@@ -211,7 +190,6 @@ start_ts() {
 	fi 
 	logger -t "Tailscale" "正在启动tailscale"
 	sed -Ei '/【Tailscaled】|^$/d' /tmp/script/_opt_script_check
-	[ ! -f "$tailscaled" ] && extract_bundled_ts
 	get_tag
  	if [ -f "$tailscaled" ] ; then
 		[ ! -x "$tailscaled" ] && chmod +x $tailscaled
