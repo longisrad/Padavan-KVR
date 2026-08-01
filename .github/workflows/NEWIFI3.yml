@@ -48,17 +48,18 @@ jobs:
         ADG_TAG=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
         echo "Latest AdGuardHome version: $ADG_TAG"
         [ -z "$ADG_TAG" ] && ADG_TAG="v0.107.78"
-        wget -O /opt/rt-n56u/trunk/user/adguardhome/AdGuardHome.tar.gz \
+        wget -O /tmp/AdGuardHome.tar.gz \
           https://github.com/AdguardTeam/AdGuardHome/releases/download/${ADG_TAG}/AdGuardHome_linux_mipsle_softfloat.tar.gz
+        tar -xzf /tmp/AdGuardHome.tar.gz -C /tmp
+        cp /tmp/AdGuardHome/AdGuardHome /opt/rt-n56u/trunk/user/adguardhome/AdGuardHome.bin
+        rm -rf /tmp/AdGuardHome.tar.gz /tmp/AdGuardHome
     - name: Download Tailscale (bundle into squashfs)
       run: |
         TS_TAG=$(curl -s https://api.github.com/repos/lmq8267/tailscale/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
         echo "Latest Tailscale version: $TS_TAG"
         [ -z "$TS_TAG" ] && TS_TAG="1.78.1"
-        wget -O /opt/rt-n56u/trunk/user/tailscale/tailscaled_full \
+        wget -O /opt/rt-n56u/trunk/user/tailscale/tailscaled.bin \
           https://github.com/lmq8267/tailscale/releases/download/${TS_TAG}/tailscaled_full
-        gzip -9 -c /opt/rt-n56u/trunk/user/tailscale/tailscaled_full > /opt/rt-n56u/trunk/user/tailscale/tailscaled.gz
-        rm -f /opt/rt-n56u/trunk/user/tailscale/tailscaled_full
     - name: Build Firmware
       env:
         TNAME: NEWIFI3
