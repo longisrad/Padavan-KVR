@@ -53,13 +53,6 @@ jobs:
         tar -xzf /tmp/AdGuardHome.tar.gz -C /tmp
         cp /tmp/AdGuardHome/AdGuardHome /opt/rt-n56u/trunk/user/adguardhome/AdGuardHome.bin
         rm -rf /tmp/AdGuardHome.tar.gz /tmp/AdGuardHome
-    - name: Download Tailscale (bundle into squashfs)
-      run: |
-        TS_TAG=$(curl -s https://api.github.com/repos/lmq8267/tailscale/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
-        echo "Latest Tailscale version: $TS_TAG"
-        [ -z "$TS_TAG" ] && TS_TAG="1.78.1"
-        wget -O /opt/rt-n56u/trunk/user/tailscale/tailscaled.bin \
-          https://github.com/lmq8267/tailscale/releases/download/${TS_TAG}/tailscaled_full
     - name: Build Firmware
       env:
         TNAME: NEWIFI3
