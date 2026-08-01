@@ -147,8 +147,6 @@ get_tag() {
 	[ -z "$tag" ] && logger -t "【AdGuardHome】" "Could not fetch latest version" && tag="v0.107.54"
 
 }
-github_proxys="DIRECT $(nvram get github_proxy)"
-
 dl_adg() {
 	find_bin
 	if [ ! -f "$SVC_PATH" ] ; then
@@ -157,8 +155,8 @@ dl_adg() {
   		adg_path=$(dirname "$SVC_PATH")
     		[ ! -d "$adg_path" ] && mkdir -p "$adg_path"
 		logger -t "【AdGuardHome】" "Downloading version ${tag}, this may be slow, please wait"
-		for proxy in $github_proxys ; do
-  			[ "$proxy" = "DIRECT" ] && proxy=""
+		{
+  			proxy=""
   			length=$(wget --no-check-certificate -T 10 -t 3 "${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz" -O /dev/null --spider --server-response 2>&1 | grep "[Cc]ontent-[Ll]ength" | grep -Eo '[0-9]+' | tail -n 1)
  			length=`expr $length + 512000`
 			length=`expr $length / 1048576`
@@ -172,7 +170,6 @@ dl_adg() {
 		 		chmod +x $SVC_PATH
 				if [[ "$($SVC_PATH -h 2>&1 | wc -l)" -gt 3 ]] ; then
 					logger -t "【AdGuardHome】" "$SVC_PATH downloaded successfully"
-					break
        				else
 	   				logger -t "【AdGuardHome】" "Download incomplete"
 					rm -f $SVC_PATH
@@ -180,7 +177,7 @@ dl_adg() {
 	  		else
 	  			logger -t "【AdGuardHome】" "Download failed, please manually download ${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz then extract and upload to $SVC_PATH"
 		 	fi
-		done
+		}
 	fi     
 }
 
