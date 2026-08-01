@@ -147,7 +147,7 @@ get_tag() {
 	[ -z "$tag" ] && logger -t "【AdGuardHome】" "Could not fetch latest version" && tag="v0.107.54"
 
 }
-github_proxys="$(nvram get github_proxy) DIRECT"
+github_proxys="DIRECT $(nvram get github_proxy)"
 
 dl_adg() {
 	find_bin
