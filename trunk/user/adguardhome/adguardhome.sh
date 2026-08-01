@@ -152,6 +152,7 @@ dl_adg() {
 	if [ ! -f "$SVC_PATH" ] ; then
 		logger -t "【AdGuardHome】" "$SVC_PATH not found, downloading AdGuardHome"
 		get_tag
+		[ -z "$tag" ] && tag="v0.107.78" && logger -t "【AdGuardHome】" "Could not fetch latest version, falling back to ${tag}"
   		adg_path=$(dirname "$SVC_PATH")
     		[ ! -d "$adg_path" ] && mkdir -p "$adg_path"
 		logger -t "【AdGuardHome】" "Downloading version ${tag}, this may be slow, please wait"
@@ -162,8 +163,9 @@ dl_adg() {
 			length=`expr $length / 1048576`
  			adg_size0="$(check_disk_size $adg_path)"
  			[ ! -z "$length" ] && logger -t "【AdGuardHome】" "Program size ${length}M, free space at program path ${adg_size0}M "
-			curl -Lkso "/tmp/AdGuardHome/AdGuardHome.tar.gz" --connect-timeout 10 --retry 2 --max-time 90 "${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz" || wget --no-check-certificate -T 15 -t 2 -q -O "/tmp/AdGuardHome/AdGuardHome.tar.gz" "${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz"
-			if [ "$?" = 0 ] ; then
+			curl -Lksfo "/tmp/AdGuardHome/AdGuardHome.tar.gz" --connect-timeout 10 --retry 2 --max-time 90 "${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz" || wget --no-check-certificate -T 15 -t 2 -q -O "/tmp/AdGuardHome/AdGuardHome.tar.gz" "${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz"
+			dl_size=$(wc -c < "/tmp/AdGuardHome/AdGuardHome.tar.gz" 2>/dev/null)
+			if [ "$?" = 0 ] && [ ! -z "$dl_size" ] && [ "$dl_size" -gt 1000000 ] ; then
 				tar -xzvf /tmp/AdGuardHome/AdGuardHome.tar.gz -C $adg_path
     				rm -f /tmp/AdGuardHome/AdGuardHome.tar.gz
 		 		cd ${adg_path} ; rm -f ./LICENSE.txt ./README.md ./CHANGELOG.md ./AdGuardHome.sig
