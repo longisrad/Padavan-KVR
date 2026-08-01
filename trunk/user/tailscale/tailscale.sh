@@ -23,14 +23,14 @@ scriptfilepath=$(cd "$(dirname "$0")"; pwd)/$(basename $0)
 [ ! -d /etc/storage/tailscale ] && mkdir -p /etc/storage/tailscale
 tailscale_renum=`nvram get tailscale_renum`
 
-BUNDLED_TS_GZ="/etc/tailscaled.gz"
+BUNDLED_TS_BIN="/etc/tailscaled.bin"
 
 extract_bundled_ts() {
-	if [ -f "$BUNDLED_TS_GZ" ] ; then
+	if [ -f "$BUNDLED_TS_BIN" ] ; then
 		bin_path=$(dirname "$tailscaled")
 		[ ! -d "$bin_path" ] && mkdir -p "$bin_path"
-		logger -t "【Tailscale】" "Found bundled tailscaled in firmware, extracting to RAM..."
-		gunzip -c "$BUNDLED_TS_GZ" > "$tailscaled"
+		logger -t "【Tailscale】" "Found bundled tailscaled in firmware, copying to RAM..."
+		cp "$BUNDLED_TS_BIN" "$tailscaled"
 		chmod +x "$tailscaled"
 		if [[ "$($tailscaled -h 2>&1 | wc -l)" -gt 3 ]] ; then
 			logger -t "【Tailscale】" "Bundled tailscaled extracted successfully"
