@@ -43,16 +43,6 @@ jobs:
         sed -i 's/size_etc="6M"/size_etc="18M"/g' /opt/rt-n56u/trunk/user/scripts/dev_init.sh
         sed -i 's/size_tmp="24M"/size_tmp="120M"/g' /opt/rt-n56u/trunk/user/scripts/dev_init.sh
         sed -i 's/mtd_part_size=65536/mtd_part_size=18874368/g' /opt/rt-n56u/trunk/user/scripts/mtd_storage.sh
-    - name: Download AdGuardHome (bundle into squashfs)
-      run: |
-        ADG_TAG=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
-        echo "Latest AdGuardHome version: $ADG_TAG"
-        [ -z "$ADG_TAG" ] && ADG_TAG="v0.107.78"
-        wget -O /tmp/AdGuardHome.tar.gz \
-          https://github.com/AdguardTeam/AdGuardHome/releases/download/${ADG_TAG}/AdGuardHome_linux_mipsle_softfloat.tar.gz
-        tar -xzf /tmp/AdGuardHome.tar.gz -C /tmp
-        cp /tmp/AdGuardHome/AdGuardHome /opt/rt-n56u/trunk/user/adguardhome/AdGuardHome.bin
-        rm -rf /tmp/AdGuardHome.tar.gz /tmp/AdGuardHome
     - name: Build Firmware
       env:
         TNAME: NEWIFI3
