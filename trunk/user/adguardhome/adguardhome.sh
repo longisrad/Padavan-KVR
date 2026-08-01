@@ -149,9 +149,31 @@ get_tag() {
 }
 github_proxys="DIRECT $(nvram get github_proxy)"
 
+BUNDLED_BIN="/etc/AdGuardHome.bin"
+
+extract_bundled() {
+	if [ -f "$BUNDLED_BIN" ] ; then
+		adg_path=$(dirname "$SVC_PATH")
+		[ ! -d "$adg_path" ] && mkdir -p "$adg_path"
+		logger -t "【AdGuardHome】" "Found bundled AdGuardHome in firmware, copying to RAM..."
+		cp "$BUNDLED_BIN" "$SVC_PATH"
+		chmod +x "$SVC_PATH" 2>/dev/null
+		if [[ "$($SVC_PATH -h 2>&1 | wc -l)" -gt 3 ]] ; then
+			logger -t "【AdGuardHome】" "Bundled AdGuardHome extracted successfully"
+			return 0
+		else
+			logger -t "【AdGuardHome】" "Bundled file corrupt, falling back to network download"
+			rm -f "$SVC_PATH"
+			return 1
+		fi
+	fi
+	return 1
+}
+
 dl_adg() {
 	find_bin
 	if [ ! -f "$SVC_PATH" ] ; then
+		extract_bundled && return 0
 		logger -t "【AdGuardHome】" "$SVC_PATH not found, downloading AdGuardHome"
 		get_tag
   		adg_path=$(dirname "$SVC_PATH")
