@@ -164,10 +164,14 @@ dl_adg() {
  			adg_size0="$(check_disk_size $adg_path)"
  			[ ! -z "$length" ] && logger -t "【AdGuardHome】" "Program size ${length}M, free space at program path ${adg_size0}M "
 			curl -Lksfo "/tmp/AdGuardHome/AdGuardHome.tar.gz" --connect-timeout 10 --retry 2 --max-time 90 "${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz" || wget --no-check-certificate -T 15 -t 2 -q -O "/tmp/AdGuardHome/AdGuardHome.tar.gz" "${proxy}https://github.com/AdguardTeam/AdGuardHome/releases/download/${tag}/AdGuardHome_linux_mipsle_softfloat.tar.gz"
+			dl_rc=$?
 			dl_size=$(wc -c < "/tmp/AdGuardHome/AdGuardHome.tar.gz" 2>/dev/null)
-			if [ "$?" = 0 ] && [ ! -z "$dl_size" ] && [ "$dl_size" -gt 1000000 ] ; then
-				tar -xzvf /tmp/AdGuardHome/AdGuardHome.tar.gz -C $adg_path
-    				rm -f /tmp/AdGuardHome/AdGuardHome.tar.gz
+			logger -t "【AdGuardHome】" "DEBUG: download exit_code=${dl_rc} file_size=${dl_size} bytes"
+			if [ "$dl_rc" = 0 ] && [ ! -z "$dl_size" ] && [ "$dl_size" -gt 1000000 ] ; then
+				tar_out=$(tar -xzvf /tmp/AdGuardHome/AdGuardHome.tar.gz -C $adg_path 2>&1)
+				tar_rc=$?
+				logger -t "【AdGuardHome】" "DEBUG: tar exit_code=${tar_rc} output=${tar_out}"
+				rm -f /tmp/AdGuardHome/AdGuardHome.tar.gz
 		 		cd ${adg_path} ; rm -f ./LICENSE.txt ./README.md ./CHANGELOG.md ./AdGuardHome.sig
 		 		chmod +x $SVC_PATH
 				if [[ "$($SVC_PATH -h 2>&1 | wc -l)" -gt 3 ]] ; then
