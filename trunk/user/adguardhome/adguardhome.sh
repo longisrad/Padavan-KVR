@@ -168,11 +168,14 @@ dl_adg() {
 			dl_size=$(wc -c < "/tmp/AdGuardHome/AdGuardHome.tar.gz" 2>/dev/null)
 			logger -t "【AdGuardHome】" "DEBUG: download exit_code=${dl_rc} file_size=${dl_size} bytes"
 			if [ "$dl_rc" = 0 ] && [ ! -z "$dl_size" ] && [ "$dl_size" -gt 1000000 ] ; then
-				tar_out=$(tar -xzvf /tmp/AdGuardHome/AdGuardHome.tar.gz -C $adg_path 2>&1)
+				rm -rf /tmp/AdGuardHome/_extract
+				mkdir -p /tmp/AdGuardHome/_extract
+				tar_out=$(tar -xzvf /tmp/AdGuardHome/AdGuardHome.tar.gz -C /tmp/AdGuardHome/_extract 2>&1)
 				tar_rc=$?
 				logger -t "【AdGuardHome】" "DEBUG: tar exit_code=${tar_rc} output=${tar_out}"
 				rm -f /tmp/AdGuardHome/AdGuardHome.tar.gz
-		 		cd ${adg_path} ; rm -f ./LICENSE.txt ./README.md ./CHANGELOG.md ./AdGuardHome.sig
+				mv /tmp/AdGuardHome/_extract/AdGuardHome/AdGuardHome "$SVC_PATH"
+				rm -rf /tmp/AdGuardHome/_extract
 		 		chmod +x $SVC_PATH
 				if [[ "$($SVC_PATH -h 2>&1 | wc -l)" -gt 3 ]] ; then
 					logger -t "【AdGuardHome】" "$SVC_PATH downloaded successfully"
