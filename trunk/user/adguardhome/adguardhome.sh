@@ -1,157 +1,244 @@
 #!/bin/sh
-# AdGuardHome manager for Padavan - NEWIFI3 Build
-# Logic: Stable logic (Wait for bind) + Auto Download + NAND Protection
+# AdGuardHome lifecycle manager - written from scratch for Padavan-KVR (NEWIFI3)
+# Scope: download/run/stop the binary + redirect DNS. All AGH settings (filters,
+# upstream DNS, whitelist...) are configured through AGH's own web dashboard.
 
-AGH_BIN="/tmp/AdGuardHome/AdGuardHome"
-AGH_TMP="/etc/storage/AdGuardHome"
-AGH_CFG="/etc/storage/AdGuardHome/AdGuardHome.yaml"
+BIN_DIR="/tmp/AdGuardHome"
+BIN_PATH="$BIN_DIR/AdGuardHome"
+CFG_DIR="/etc/storage/AdGuardHome"
+CFG_PATH="$CFG_DIR/AdGuardHome.yaml"
+AGH_PORT=5335
+GH_API="https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest"
+GH_DL="https://github.com/AdguardTeam/AdGuardHome/releases/download"
+ARCH="AdGuardHome_linux_mipsle_softfloat.tar.gz"
 LOG_TAG="AdGuardHome"
+WATCHDOG_FILE="/tmp/script/_opt_script_check"
 
-# Link tải mipsle softfloat cho Newifi3
-GH_DL="https://github.com/AdguardTeam/AdGuardHome/releases/latest/download/AdGuardHome_linux_mipsle_softfloat.tar.gz"
+log() {
+    logger -t "$LOG_TAG" "$1"
+}
 
-log() { logger -t "$LOG_TAG" "$1"; }
+is_running() {
+    [ -n "$(pidof AdGuardHome)" ]
+}
 
-# --- 1. HÀM TẢI BINARY VỀ RAM ---
-load_binary() {
-    if [ -x "$AGH_BIN" ] && [ "$("$AGH_BIN" --version 2>&1 | wc -l)" -ge 1 ]; then
+fetch_latest_tag() {
+    tag="$(curl -sk --connect-timeout 5 "$GH_API" 2>/dev/null | grep '"tag_name"' | cut -d'"' -f4)"
+    [ -z "$tag" ] && tag="v0.107.78"
+    echo "$tag"
+}
+
+download_binary() {
+    tag="$(fetch_latest_tag)"
+    log "Downloading AdGuardHome ${tag}..."
+    mkdir -p "$BIN_DIR"
+    rm -rf "$BIN_DIR/_dl"
+    mkdir -p "$BIN_DIR/_dl"
+
+    url="${GH_DL}/${tag}/${ARCH}"
+    archive="$BIN_DIR/_dl/agh.tar.gz"
+
+    curl -Lksfo "$archive" --connect-timeout 10 --retry 2 --max-time 120 "$url" \
+        || wget --no-check-certificate -T 20 -t 2 -q -O "$archive" "$url"
+
+    size="$(wc -c < "$archive" 2>/dev/null)"
+    if [ -z "$size" ] || [ "$size" -lt 1000000 ]; then
+        log "Download failed or incomplete (size=${size:-0} bytes)"
+        rm -rf "$BIN_DIR/_dl"
+        return 1
+    fi
+
+    tar -xzf "$archive" -C "$BIN_DIR/_dl" 2>/dev/null
+    extracted="$(find "$BIN_DIR/_dl" -type f -name AdGuardHome | head -n1)"
+    if [ -z "$extracted" ]; then
+        log "Archive extracted but binary not found inside"
+        rm -rf "$BIN_DIR/_dl"
+        return 1
+    fi
+
+    mv "$extracted" "$BIN_PATH"
+    chmod +x "$BIN_PATH"
+    rm -rf "$BIN_DIR/_dl"
+
+    if [ "$("$BIN_PATH" --version 2>&1 | wc -l)" -lt 1 ]; then
+        log "Downloaded binary failed sanity check"
+        rm -f "$BIN_PATH"
+        return 1
+    fi
+
+    log "AdGuardHome ${tag} ready at $BIN_PATH"
+    return 0
+}
+
+ensure_binary() {
+    if [ -x "$BIN_PATH" ] && [ "$("$BIN_PATH" --version 2>&1 | wc -l)" -ge 1 ]; then
         return 0
     fi
-    log "Binary not found in RAM. Downloading..."
-    mkdir -p /tmp/AdGuardHome
-    curl -Lksfo /tmp/AdGuardHome/agh.tar.gz "$GH_DL" || wget -q -O /tmp/AdGuardHome/agh.tar.gz "$GH_DL"
-    
-    tar -xzf /tmp/AdGuardHome/agh.tar.gz -C /tmp/AdGuardHome
-    mv "$(find /tmp/AdGuardHome -type f -name AdGuardHome | head -n1)" "$AGH_BIN"
-    chmod +x "$AGH_BIN"
-    rm -rf /tmp/AdGuardHome/agh.tar.gz /tmp/AdGuardHome/AdGuardHome
-    
-    if [ ! -f "$AGH_BIN" ]; then
-        log "ERROR: Failed to download binary"
-        nvram set adg_enable=0
-        exit 1
-    fi
+    rm -f "$BIN_PATH"
+    download_binary
 }
 
-# --- 2. ĐỒNG BỘ DNS THEO MODE (Logic từ file ổn định) ---
-change_dns() {
-    local mode="$(nvram get adg_redirect)"
-    # Dọn dẹp config cũ
-    sed -i '/no-resolv/d; /server=127.0.0.1#5335/d; /^port=/d' /etc/storage/dnsmasq/dnsmasq.conf
+lan_ips() {
+    ifconfig br0 2>/dev/null | grep "inet addr" | awk -F: '{print $2}' | awk '{print $1}'
+}
 
-    if [ "$mode" = "1" ]; then
-        # Mode 1: dnsmasq forward lên AGH port 5335
-        cat >> /etc/storage/dnsmasq/dnsmasq.conf << EOF
-no-resolv
-server=127.0.0.1#5335
-EOF
-        log "DNS: dnsmasq forwarding to AGH port 5335"
-    elif [ "$mode" = "2" ]; then
-        # Mode 2: tắt hoàn toàn DNS của dnsmasq, AGH port 53
-        echo "port=0" >> /etc/storage/dnsmasq/dnsmasq.conf
-        log "DNS: dnsmasq port disabled, AGH takes port 53"
-    fi
+dnsmasq_forward_add() {
+    sed -i '/^no-resolv$/d; /^server=127.0.0.1#'"$AGH_PORT"'$/d' /etc/storage/dnsmasq/dnsmasq.conf
+    printf 'no-resolv\nserver=127.0.0.1#%s\n' "$AGH_PORT" >> /etc/storage/dnsmasq/dnsmasq.conf
+    /sbin/restart_dhcpd
+    log "dnsmasq now forwards to AdGuardHome (port $AGH_PORT)"
+}
+
+dnsmasq_forward_del() {
+    sed -i '/^no-resolv$/d; /^server=127.0.0.1#'"$AGH_PORT"'$/d' /etc/storage/dnsmasq/dnsmasq.conf
     /sbin/restart_dhcpd
 }
 
-del_dns() {
-    sed -i '/no-resolv/d; /server=127.0.0.1#5335/d; /^port=0/d' /etc/storage/dnsmasq/dnsmasq.conf
-    /sbin/restart_dhcpd
-}
-
-# --- 3. REDIRECT IPTABLES (Dành cho Mode 1) ---
-set_iptable() {
-    local mode="$(nvram get adg_redirect)"
-    [ "$mode" != "1" ] && return
-    
-    IPS="$(ifconfig | grep "inet addr" | grep -v ":127" | grep "Bcast" | awk '{print $2}' | awk -F: '{print $2}')"
-    for IP in $IPS; do
-        iptables -t nat -A PREROUTING -p tcp -d $IP --dport 53 -j REDIRECT --to-ports 5335 >/dev/null 2>&1
-        iptables -t nat -A PREROUTING -p udp -d $IP --dport 53 -j REDIRECT --to-ports 5335 >/dev/null 2>&1
+redirect_add() {
+    for ip in $(lan_ips); do
+        iptables -t nat -A PREROUTING -d "$ip" -p udp --dport 53 -j REDIRECT --to-ports $AGH_PORT 2>/dev/null
+        iptables -t nat -A PREROUTING -d "$ip" -p tcp --dport 53 -j REDIRECT --to-ports $AGH_PORT 2>/dev/null
     done
-    log "Mode 1: Redirecting port 53 to 5335"
+    log "DNS redirect enabled (53 -> $AGH_PORT)"
 }
 
-clear_iptable() {
-    iptables -t nat -D PREROUTING -p tcp --dport 53 -j REDIRECT --to-ports 5335 >/dev/null 2>&1
-    iptables -t nat -D PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5335 >/dev/null 2>&1
+redirect_del() {
+    for ip in $(lan_ips); do
+        iptables -t nat -D PREROUTING -d "$ip" -p udp --dport 53 -j REDIRECT --to-ports $AGH_PORT 2>/dev/null
+        iptables -t nat -D PREROUTING -d "$ip" -p tcp --dport 53 -j REDIRECT --to-ports $AGH_PORT 2>/dev/null
+    done
 }
 
-# --- 4. TỐI ƯU CẤU HÌNH (Patch Port & RAM Log - Logic ổn định) ---
-getconfig() {
-    mkdir -p "$AGH_TMP"
-    [ ! -f "$AGH_CFG" ] && return
-
-    # Tự động sửa Port trong YAML cho khớp với Mode WebUI trước khi khởi chạy
-    local mode="$(nvram get adg_redirect)"
-    local target_p=5335
-    [ "$mode" = "2" ] && target_p=53
-    sed -i "/dns:/,/port:/ s/port: [0-9]*/port: $target_p/" "$AGH_CFG"
-
-    # Bảo vệ NAND: Đẩy Stats/QueryLog vào RAM
-    mkdir -p /tmp/adguard-log
-    if grep -q '^statistics:' "$AGH_CFG"; then
-        sed -i '/^statistics:/,/^[a-z]/{s|  dir_path: ""|  dir_path: "/tmp/adguard-log"|}' "$AGH_CFG"
-    fi
-    if grep -q '^querylog:' "$AGH_CFG"; then
-        sed -i '/^querylog:/,/^[a-z]/{s|  dir_path: ""|  dir_path: "/tmp/adguard-log"|}' "$AGH_CFG"
-    fi
-    # Tắt ghi file querylog (dùng memory buffer)
-    sed -i 's/  file_enabled: true/  file_enabled: false/' "$AGH_CFG"
-    log "Config patched: Port=$target_p, Logs pushed to RAM"
+apply_redirect_mode() {
+    mode="$(nvram get adg_redirect)"
+    # Clear any previous mode's config first, then apply the selected one
+    dnsmasq_forward_del
+    redirect_del
+    case "$mode" in
+        1)
+            if wait_for_port; then
+                dnsmasq_forward_add
+            else
+                log "WARNING: AGH did not open port $AGH_PORT in time, dnsmasq forwarding not applied"
+            fi
+            ;;
+        2)
+            if wait_for_port; then
+                redirect_add
+            else
+                log "WARNING: AGH did not open port $AGH_PORT in time, DNS redirect not applied"
+            fi
+            ;;
+        *)
+            log "DNS redirect mode: None"
+            ;;
+    esac
 }
 
-# --- 5. KHỞI CHẠY (Logic đợi Port bind thành công) ---
-start_adg() {
-    if [ "$(nvram get adg_enable)" != "1" ]; then stop_adg; return; fi
-    if pgrep AdGuardHome >/dev/null 2>&1; then return; fi
-
-    load_binary
-    getconfig
-    export SSL_CERT_FILE=/etc_ro/ca-certificates.crt
-
-    log "Starting AdGuardHome..."
-    if [ -f "$AGH_CFG" ] && [ -s "$AGH_CFG" ]; then
-        "$AGH_BIN" -c "$AGH_CFG" -w "$AGH_TMP" --no-check-update &
-    else
-        log "Setup mode (Port 3000)..."
-        "$AGH_BIN" -w "$AGH_TMP" --no-check-update &
-    fi
-
-    # Đợi AGH bind cổng xong mới cấu hình dnsmasq (Logic ổn định nhất)
-    local mode="$(nvram get adg_redirect)"
-    local check_p=5335
-    [ "$mode" = "2" ] && check_p=53
-    
-    local retry=0
-    while [ $retry -lt 15 ]; do
-        if netstat -ulnp 2>/dev/null | grep -q ":$check_p "; then
-            log "AGH bound port $check_p OK. Syncing DNS..."
-            change_dns
-            break
-        fi
+wait_for_port() {
+    tries=0
+    while [ $tries -lt 10 ]; do
+        netstat -uln 2>/dev/null | grep -q ":$AGH_PORT " && return 0
         sleep 1
-        retry=$((retry + 1))
+        tries=$((tries + 1))
     done
+    return 1
+}
 
-    if [ $retry -eq 15 ]; then
-        log "WARNING: AGH failed to bind port $check_p"
-        change_dns
+install_watchdog() {
+    [ ! -f "$WATCHDOG_FILE" ] && return
+    sed -Ei "/${LOG_TAG}_watchdog/d" "$WATCHDOG_FILE"
+    cat >> "$WATCHDOG_FILE" <<-EOF
+[ -z "\`pidof AdGuardHome\`" ] && /usr/bin/adguardhome.sh start #${LOG_TAG}_watchdog
+	EOF
+}
+
+remove_watchdog() {
+    [ -f "$WATCHDOG_FILE" ] && sed -Ei "/${LOG_TAG}_watchdog/d" "$WATCHDOG_FILE"
+}
+
+generate_default_config() {
+    mkdir -p "$CFG_DIR"
+    cat > "$CFG_PATH" <<-EOF
+http:
+  address: 0.0.0.0:3030
+users:
+  - name: admin
+    password: \$2b\$12\$zgC5mg2IyANRLOi8OHgVvePjzQ0s6uIgjlG1P3.nnzQ3ACXD9czYC
+dns:
+  bind_hosts:
+    - 0.0.0.0
+  port: 5335
+  upstream_dns:
+    - https://dns.cloudflare.com/dns-query
+    - https://dns.google/dns-query
+  bootstrap_dns:
+    - 1.1.1.1
+    - 8.8.8.8
+schema_version: 28
+EOF
+    chmod 644 "$CFG_PATH"
+    log "Generated default config (login: admin / admin, dashboard on :3030)"
+}
+
+start() {
+    if is_running; then
+        log "Already running, skip"
+        return 0
     fi
-    set_iptable
+
+    log "Starting..."
+    mkdir -p "$CFG_DIR"
+
+    if ! ensure_binary; then
+        log "Cannot start: no working binary"
+        return 1
+    fi
+
+    [ ! -s "$CFG_PATH" ] && generate_default_config
+
+    "$BIN_PATH" -c "$CFG_PATH" -w "$CFG_DIR" --no-check-update >/dev/null 2>&1 &
+
+    sleep 3
+    if ! is_running; then
+        log "Process exited immediately after start, check binary/config"
+        return 1
+    fi
+    log "Process started (PID $(pidof AdGuardHome))"
+
+    apply_redirect_mode
+
+    install_watchdog
+    return 0
 }
 
-stop_adg() {
-    log "Stopping AdGuardHome..."
+stop() {
+    log "Stopping..."
+    remove_watchdog
+    dnsmasq_forward_del
+    redirect_del
     killall -9 AdGuardHome 2>/dev/null
-    del_dns
-    clear_iptable
-    rm -f "$AGH_TMP"/*.pid 2>/dev/null
+    log "Stopped"
 }
 
-case $1 in
-    start) start_adg ;;
-    stop) stop_adg ;;
-    restart) stop_adg; sleep 2; start_adg ;;
-    status) pgrep AdGuardHome >/dev/null && echo "running" || echo "stopped" ;;
+restart() {
+    stop
+    sleep 1
+    start
+}
+
+status() {
+    if is_running; then
+        echo "running"
+    else
+        echo "stopped"
+    fi
+}
+
+case "$1" in
+    start)   start ;;
+    stop)    stop ;;
+    restart) restart ;;
+    status)  status ;;
+    *) echo "Usage: $0 {start|stop|restart|status}" ;;
 esac
