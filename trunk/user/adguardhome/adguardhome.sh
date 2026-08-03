@@ -7,7 +7,7 @@ BIN_DIR="/tmp/AdGuardHome"
 BIN_PATH="$BIN_DIR/AdGuardHome"
 CFG_DIR="/etc/storage/AdGuardHome"
 CFG_PATH="$CFG_DIR/AdGuardHome.yaml"
-AGH_PORT=5335
+WORK_DIR="/tmp/AdGuardHome/work"
 GH_API="https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest"
 GH_DL="https://github.com/AdguardTeam/AdGuardHome/releases/download"
 ARCH="AdGuardHome_linux_mipsle_softfloat.tar.gz"
@@ -82,63 +82,56 @@ lan_ips() {
     ifconfig br0 2>/dev/null | grep "inet addr" | awk -F: '{print $2}' | awk '{print $1}'
 }
 
+target_port() {
+    case "$(nvram get adg_redirect)" in
+        2) echo 53 ;;
+        *) echo 5335 ;;
+    esac
+}
+
+set_agh_port() {
+    port="$1"
+    if [ -s "$CFG_PATH" ]; then
+        sed -i "/^dns:/,/^[a-zA-Z]/{s/^  port: [0-9]*/  port: ${port}/}" "$CFG_PATH"
+    fi
+}
+
 dnsmasq_forward_add() {
-    sed -i '/^no-resolv$/d; /^server=127.0.0.1#'"$AGH_PORT"'$/d' /etc/storage/dnsmasq/dnsmasq.conf
-    printf 'no-resolv\nserver=127.0.0.1#%s\n' "$AGH_PORT" >> /etc/storage/dnsmasq/dnsmasq.conf
+    # Mode 1: dnsmasq keeps port 53, forwards every query to AGH on 5335
+    sed -i '/^port=0$/d; /^no-resolv$/d; /^server=127\.0\.0\.1#5335$/d' /etc/storage/dnsmasq/dnsmasq.conf
+    printf 'no-resolv\nserver=127.0.0.1#5335\n' >> /etc/storage/dnsmasq/dnsmasq.conf
     /sbin/restart_dhcpd
-    log "dnsmasq now forwards to AdGuardHome (port $AGH_PORT)"
+    log "Mode 1: dnsmasq (port 53) forwards to AdGuardHome (port 5335)"
 }
 
-dnsmasq_forward_del() {
-    sed -i '/^no-resolv$/d; /^server=127.0.0.1#'"$AGH_PORT"'$/d' /etc/storage/dnsmasq/dnsmasq.conf
+dnsmasq_takeover_add() {
+    # Mode 2: AGH owns port 53 directly, dnsmasq keeps DHCP only (DNS disabled)
+    sed -i '/^port=0$/d; /^no-resolv$/d; /^server=127\.0\.0\.1#5335$/d' /etc/storage/dnsmasq/dnsmasq.conf
+    echo 'port=0' >> /etc/storage/dnsmasq/dnsmasq.conf
     /sbin/restart_dhcpd
+    log "Mode 2: dnsmasq DNS disabled (DHCP only), AdGuardHome now owns port 53"
 }
 
-redirect_add() {
-    for ip in $(lan_ips); do
-        iptables -t nat -A PREROUTING -d "$ip" -p udp --dport 53 -j REDIRECT --to-ports $AGH_PORT 2>/dev/null
-        iptables -t nat -A PREROUTING -d "$ip" -p tcp --dport 53 -j REDIRECT --to-ports $AGH_PORT 2>/dev/null
-    done
-    log "DNS redirect enabled (53 -> $AGH_PORT)"
-}
-
-redirect_del() {
-    for ip in $(lan_ips); do
-        iptables -t nat -D PREROUTING -d "$ip" -p udp --dport 53 -j REDIRECT --to-ports $AGH_PORT 2>/dev/null
-        iptables -t nat -D PREROUTING -d "$ip" -p tcp --dport 53 -j REDIRECT --to-ports $AGH_PORT 2>/dev/null
-    done
+dnsmasq_restore_default() {
+    # Mode 0/None: dnsmasq back to its own normal DNS behavior on port 53
+    sed -i '/^port=0$/d; /^no-resolv$/d; /^server=127\.0\.0\.1#5335$/d' /etc/storage/dnsmasq/dnsmasq.conf
+    /sbin/restart_dhcpd
 }
 
 apply_redirect_mode() {
     mode="$(nvram get adg_redirect)"
-    # Clear any previous mode's config first, then apply the selected one
-    dnsmasq_forward_del
-    redirect_del
     case "$mode" in
-        1)
-            if wait_for_port; then
-                dnsmasq_forward_add
-            else
-                log "WARNING: AGH did not open port $AGH_PORT in time, dnsmasq forwarding not applied"
-            fi
-            ;;
-        2)
-            if wait_for_port; then
-                redirect_add
-            else
-                log "WARNING: AGH did not open port $AGH_PORT in time, DNS redirect not applied"
-            fi
-            ;;
-        *)
-            log "DNS redirect mode: None"
-            ;;
+        1) dnsmasq_forward_add ;;
+        2) dnsmasq_takeover_add ;;
+        *) dnsmasq_restore_default; log "DNS redirect mode: None" ;;
     esac
 }
 
 wait_for_port() {
+    port="$1"
     tries=0
     while [ $tries -lt 10 ]; do
-        netstat -uln 2>/dev/null | grep -q ":$AGH_PORT " && return 0
+        netstat -uln 2>/dev/null | grep -q ":$port " && return 0
         sleep 1
         tries=$((tries + 1))
     done
@@ -189,6 +182,7 @@ start() {
 
     log "Starting..."
     mkdir -p "$CFG_DIR"
+    mkdir -p "$WORK_DIR"
 
     if ! ensure_binary; then
         log "Cannot start: no working binary"
@@ -197,16 +191,23 @@ start() {
 
     [ ! -s "$CFG_PATH" ] && generate_default_config
 
-    "$BIN_PATH" -c "$CFG_PATH" -w "$CFG_DIR" --no-check-update >/dev/null 2>&1 &
+    port="$(target_port)"
+    set_agh_port "$port"
+
+    "$BIN_PATH" -c "$CFG_PATH" -w "$WORK_DIR" --no-check-update >/dev/null 2>&1 &
 
     sleep 3
     if ! is_running; then
         log "Process exited immediately after start, check binary/config"
         return 1
     fi
-    log "Process started (PID $(pidof AdGuardHome))"
+    log "Process started (PID $(pidof AdGuardHome)), listening on port $port"
 
-    apply_redirect_mode
+    if wait_for_port "$port"; then
+        apply_redirect_mode
+    else
+        log "WARNING: AGH did not open port $port in time, dnsmasq settings not changed"
+    fi
 
     install_watchdog
     return 0
@@ -215,8 +216,7 @@ start() {
 stop() {
     log "Stopping..."
     remove_watchdog
-    dnsmasq_forward_del
-    redirect_del
+    dnsmasq_restore_default
     killall -9 AdGuardHome 2>/dev/null
     log "Stopped"
 }
