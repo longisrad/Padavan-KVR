@@ -82,6 +82,18 @@ lan_ips() {
     ifconfig br0 2>/dev/null | grep "inet addr" | awk -F: '{print $2}' | awk '{print $1}'
 }
 
+dnsmasq_forward_add() {
+    sed -i '/^no-resolv$/d; /^server=127.0.0.1#'"$AGH_PORT"'$/d' /etc/storage/dnsmasq/dnsmasq.conf
+    printf 'no-resolv\nserver=127.0.0.1#%s\n' "$AGH_PORT" >> /etc/storage/dnsmasq/dnsmasq.conf
+    /sbin/restart_dhcpd
+    log "dnsmasq now forwards to AdGuardHome (port $AGH_PORT)"
+}
+
+dnsmasq_forward_del() {
+    sed -i '/^no-resolv$/d; /^server=127.0.0.1#'"$AGH_PORT"'$/d' /etc/storage/dnsmasq/dnsmasq.conf
+    /sbin/restart_dhcpd
+}
+
 redirect_add() {
     for ip in $(lan_ips); do
         iptables -t nat -A PREROUTING -d "$ip" -p udp --dport 53 -j REDIRECT --to-ports $AGH_PORT 2>/dev/null
@@ -95,6 +107,32 @@ redirect_del() {
         iptables -t nat -D PREROUTING -d "$ip" -p udp --dport 53 -j REDIRECT --to-ports $AGH_PORT 2>/dev/null
         iptables -t nat -D PREROUTING -d "$ip" -p tcp --dport 53 -j REDIRECT --to-ports $AGH_PORT 2>/dev/null
     done
+}
+
+apply_redirect_mode() {
+    mode="$(nvram get adg_redirect)"
+    # Clear any previous mode's config first, then apply the selected one
+    dnsmasq_forward_del
+    redirect_del
+    case "$mode" in
+        1)
+            if wait_for_port; then
+                dnsmasq_forward_add
+            else
+                log "WARNING: AGH did not open port $AGH_PORT in time, dnsmasq forwarding not applied"
+            fi
+            ;;
+        2)
+            if wait_for_port; then
+                redirect_add
+            else
+                log "WARNING: AGH did not open port $AGH_PORT in time, DNS redirect not applied"
+            fi
+            ;;
+        *)
+            log "DNS redirect mode: None"
+            ;;
+    esac
 }
 
 wait_for_port() {
@@ -148,13 +186,7 @@ start() {
     fi
     log "Process started (PID $(pidof AdGuardHome))"
 
-    if [ "$(nvram get adg_redirect)" = "1" ]; then
-        if wait_for_port; then
-            redirect_add
-        else
-            log "WARNING: AGH did not open port $AGH_PORT in time, DNS redirect not applied"
-        fi
-    fi
+    apply_redirect_mode
 
     install_watchdog
     nvram set adg_enable=1
@@ -164,6 +196,7 @@ start() {
 stop() {
     log "Stopping..."
     remove_watchdog
+    dnsmasq_forward_del
     redirect_del
     killall -9 AdGuardHome 2>/dev/null
     nvram set adg_enable=0
