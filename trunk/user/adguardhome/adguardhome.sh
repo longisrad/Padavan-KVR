@@ -157,6 +157,30 @@ remove_watchdog() {
     [ -f "$WATCHDOG_FILE" ] && sed -Ei "/${LOG_TAG}_watchdog/d" "$WATCHDOG_FILE"
 }
 
+generate_default_config() {
+    mkdir -p "$CFG_DIR"
+    cat > "$CFG_PATH" <<-EOF
+http:
+  address: 0.0.0.0:3030
+users:
+  - name: admin
+    password: \$2b\$12\$zgC5mg2IyANRLOi8OHgVvePjzQ0s6uIgjlG1P3.nnzQ3ACXD9czYC
+dns:
+  bind_hosts:
+    - 0.0.0.0
+  port: 5335
+  upstream_dns:
+    - https://dns.cloudflare.com/dns-query
+    - https://dns.google/dns-query
+  bootstrap_dns:
+    - 1.1.1.1
+    - 8.8.8.8
+schema_version: 28
+EOF
+    chmod 644 "$CFG_PATH"
+    log "Generated default config (login: admin / admin, dashboard on :3030)"
+}
+
 start() {
     if is_running; then
         log "Already running, skip"
@@ -171,13 +195,9 @@ start() {
         return 1
     fi
 
-    if [ -s "$CFG_PATH" ]; then
-        "$BIN_PATH" -c "$CFG_PATH" -w "$CFG_DIR" --no-check-update >/dev/null 2>&1 &
-    else
-        # First run: AGH serves its own setup wizard on :3000, will write
-        # $CFG_PATH itself once the user completes setup through the dashboard.
-        "$BIN_PATH" -w "$CFG_DIR" --no-check-update >/dev/null 2>&1 &
-    fi
+    [ ! -s "$CFG_PATH" ] && generate_default_config
+
+    "$BIN_PATH" -c "$CFG_PATH" -w "$CFG_DIR" --no-check-update >/dev/null 2>&1 &
 
     sleep 3
     if ! is_running; then
