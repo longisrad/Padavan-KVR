@@ -53,6 +53,7 @@ function applyRule(){
 		showLoading();
 		
 		document.form.action_mode.value = " Apply ";
+		document.form.action_script.value = "restart_adguardhome";
 		document.form.current_page.value = "/Advanced_adguardhome.asp";
 		document.form.next_page.value = "";
 		
