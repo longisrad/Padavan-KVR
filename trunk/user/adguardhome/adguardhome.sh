@@ -189,7 +189,6 @@ start() {
     apply_redirect_mode
 
     install_watchdog
-    nvram set adg_enable=1
     return 0
 }
 
@@ -199,7 +198,6 @@ stop() {
     dnsmasq_forward_del
     redirect_del
     killall -9 AdGuardHome 2>/dev/null
-    nvram set adg_enable=0
     log "Stopped"
 }
 
