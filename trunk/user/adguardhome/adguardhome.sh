@@ -218,6 +218,11 @@ stop() {
     remove_watchdog
     dnsmasq_restore_default
     killall -9 AdGuardHome 2>/dev/null
+    tries=0
+    while [ -n "$(pidof AdGuardHome)" ] && [ $tries -lt 10 ]; do
+        sleep 1
+        tries=$((tries + 1))
+    done
     log "Stopped"
 }
 
