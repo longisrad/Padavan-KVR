@@ -1,102 +1,208 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title><#Web_Title#> - AdGuardHome</title>
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-<link rel="stylesheet" type="text/css" href="/govern.css">
-<script type="text/javascript" src="/js/jquery.js"></script>
+<title><#Web_Title#> - AdGuard Home</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="-1">
+
+<link rel="shortcut icon" href="images/favicon.ico">
+<link rel="icon" href="images/favicon.png">
+<link rel="stylesheet" type="text/css" href="/bootstrap/css/bootstrap.min.css">
+<link rel="stylesheet" type="text/css" href="/bootstrap/css/main.css">
+<link rel="stylesheet" type="text/css" href="/bootstrap/css/engage.itoggle.css">
+
+<script type="text/javascript" src="/jquery.js"></script>
+<script type="text/javascript" src="/bootstrap/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="/bootstrap/js/engage.itoggle.min.js"></script>
 <script type="text/javascript" src="/state.js"></script>
 <script type="text/javascript" src="/general.js"></script>
+<script type="text/javascript" src="/itoggle.js"></script>
 <script type="text/javascript" src="/popup.js"></script>
 <script type="text/javascript" src="/help.js"></script>
-
+<script type="text/javascript" src="/help_b.js"></script>
 <script>
-function applySettings() {
-    document.form.adg_enable_input.value = document.getElementById('adg_enable_cb').checked ? '1' : '0';
-    document.form.adg_redirect_input.value = document.getElementById('adg_redirect_cb').checked ? '1' : '0';
-    document.form.action_mode.value = "Apply";
-    document.form.submit();
+var $j = jQuery.noConflict();
+
+$j(document).ready(function() {
+
+	init_itoggle('adg_enable');
+
+});
+
+</script>
+<script>
+
+<% login_state_hook(); %>
+
+function initial(){
+	show_banner(2);
+	show_menu(5,16);
+	showmenu();
+	show_footer();
+
 }
+
+function textarea_scripts_enabled(v){
+	inputCtrl(document.form['scripts.adg.sh'], v);
+}
+
+
+function applyRule(){
+//	if(validForm()){
+		showLoading();
+		
+		document.form.action_mode.value = " Apply ";
+		document.form.current_page.value = "/Advanced_adguardhome.asp";
+		document.form.next_page.value = "";
+		
+		document.form.submit();
+//	}
+}
+
+function showmenu(){
+showhide_div('sdnslink', found_app_smartdns());
+}
+
+function done_validating(action){
+	refreshpage();
+}
+
 </script>
 </head>
 
-<body onload="show_menu()">
-<div id="TopBanner"></div>
-<div id="Loading"></div>
+<body onload="initial();" onunLoad="return unload_body();">
 
-<form method="post" name="form" action="/apply.cgi" target="hidden_frame">
-<input type="hidden" name="submit_button" value="Advanced_adguardhome">
-<input type="hidden" name="current_page" value="/Advanced_adguardhome.asp">
-<input type="hidden" name="sid_list" value="AdguardHomeConf;">
-<input type="hidden" name="action_mode" value="">
-<input type="hidden" name="action_script" value="restart_adguardhome">
-<input type="hidden" name="adg_enable" id="adg_enable_input" value="<% nvram_get("adg_enable"); %>">
-<input type="hidden" name="adg_redirect" id="adg_redirect_input" value="<% nvram_get("adg_redirect"); %>">
+<div class="wrapper">
+	<div class="container-fluid" style="padding-right: 0px">
+		<div class="row-fluid">
+			<div class="span3"><center><div id="logo"></div></center></div>
+			<div class="span9" >
+				<div id="TopBanner"></div>
+			</div>
+		</div>
+	</div>
 
-<table width="98%" cellpadding="4" cellspacing="0" class="FormTitle">
-<tr>
-  <td>
-    <div class="formfontdesc">
-      AdGuardHome is a network-wide DNS-based ad blocker. This page only controls
-      whether the service runs and whether DNS traffic is redirected to it.
-      All filtering rules, upstream DNS servers, and other detailed settings are
-      configured in AdGuardHome's own dashboard (link below).
-    </div>
+	<div id="Loading" class="popup_bg"></div>
 
-    <table width="100%" border="1" cellpadding="4" cellspacing="0" class="FormTable">
-      <thead>
-        <tr>
-          <td colspan="2">AdGuardHome Control</td>
-        </tr>
-      </thead>
+	<iframe name="hidden_frame" id="hidden_frame" src="" width="0" height="0" frameborder="0"></iframe>
 
-      <tr>
-        <th width="30%">Enable AdGuardHome</th>
-        <td>
-          <input type="checkbox" id="adg_enable_cb" <% nvram_match("adg_enable", "1", "checked"); %>>
-        </td>
-      </tr>
+	<form method="post" name="form" id="ruleForm" action="/start_apply.htm" target="hidden_frame">
 
-      <tr>
-        <th width="30%">Redirect DNS (port 53) to AdGuardHome</th>
-        <td>
-          <input type="checkbox" id="adg_redirect_cb" <% nvram_match("adg_redirect", "1", "checked"); %>>
-          <br><span style="color:#888;">
-            Redirects all LAN DNS traffic on port 53 to AdGuardHome (port 5335).
-            Leave this off if you only want to test AdGuardHome without affecting
-            the rest of the network yet.
-          </span>
-        </td>
-      </tr>
+	<input type="hidden" name="current_page" value="Advanced_adguardhome.asp">
+	<input type="hidden" name="next_page" value="">
+	<input type="hidden" name="next_host" value="">
+	<input type="hidden" name="sid_list" value="AdguardHomeConf;">
+	<input type="hidden" name="group_id" value="">
+	<input type="hidden" name="action_mode" value="">
+	<input type="hidden" name="action_script" value="">
+	<input type="hidden" name="wan_ipaddr" value="<% nvram_get_x("", "wan0_ipaddr"); %>" readonly="1">
+	<input type="hidden" name="wan_netmask" value="<% nvram_get_x("", "wan0_netmask"); %>" readonly="1">
+	<input type="hidden" name="dhcp_start" value="<% nvram_get_x("", "dhcp_start"); %>">
+	<input type="hidden" name="dhcp_end" value="<% nvram_get_x("", "dhcp_end"); %>">
 
-      <tr>
-        <th width="30%">Dashboard</th>
-        <td>
-          <a href="http://<% nvram_get("lan_ipaddr"); %>:3000/" target="_blank">
-            First-time setup wizard (port 3000)
-          </a>
-          &nbsp;|&nbsp;
-          <a href="http://<% nvram_get("lan_ipaddr"); %>:3030/" target="_blank">
-            Dashboard (port 3030, after setup is complete)
-          </a>
-          <br><span style="color:#888;">
-            Use the dashboard to configure filter lists, upstream DNS servers,
-            client rules, and everything else AdGuardHome supports.
-          </span>
-        </td>
-      </tr>
-    </table>
+	<div class="container-fluid">
+		<div class="row-fluid">
+			<div class="span3">
+				<!--Sidebar content-->
+				<!--=====Beginning of Main Menu=====-->
+				<div class="well sidebar-nav side_nav" style="padding: 0px;">
+					<ul id="mainMenu" class="clearfix"></ul>
+					<ul class="clearfix">
+						<li>
+							<div id="subMenu" class="accordion"></div>
+						</li>
+					</ul>
+				</div>
+			</div>
 
-    <div style="margin-top:10px;">
-      <input type="button" class="button_gen_long" value="Apply" onclick="applySettings();">
-    </div>
+			<div class="span9">
+				<!--Body content-->
+				<div class="row-fluid">
+					<div class="span12">
+						<div class="box well grad_colour_dark_blue">
+							<h2 class="box_head round_top"><#menu5_28#> - <#menu5_29#></h2>
+							<div class="round_bottom">
+							<div>
+                            <ul class="nav nav-tabs" style="margin-bottom: 10px;">
+								<li id="sdnslink" style="display:none">
+                                    <a href="Advanced_smartdns.asp"><#menu5_24#></a>
+                                </li>
+								 <li class="active">
+                                    <a href="Advanced_adguardhome.asp"><#menu5_28#></a>
+                                </li>
+                            </ul>
+                        </div>
+								<div class="row-fluid">
+									<div id="tabMenu" class="submenuBlock"></div>
+									<div class="alert alert-info" style="margin: 10px;">
+									<p>AdGuard Home is a network-wide ad blocker and anti-tracking tool. Once installed, it protects all your home devices without needing any client software. As IoT and connected devices grow, controlling your entire network environment matters more than ever.
+									</p>
+									<a href="https://adguard.com/zh_cn/adguard-home/overview.html" target="blank">AdGuard Homepage</a>
+									, Project page: <a href="https://github.com/AdguardTeam/AdGuardHome" target="blank">https://github.com/AdguardTeam/AdGuardHome</a>
+									, Notes: ① Requires 30M+ free space ② Default account/password: admin ③ To change password, edit lines 4-5 of adg.sh below: auth_name:username auth_pass:paste the hashed password ④ <a href="https://www.jisuan.mobi/nX7.html" target="blank">Online password hash generator</a>
+									</div>
 
-  </td>
-</tr>
-</table>
-</form>
+									<table width="100%" align="center" cellpadding="4" cellspacing="0" class="table">
+										<tr>
+											<th width="30%" style="border-top: 0 none;">Enable AdGuardHome</th>
+											<td style="border-top: 0 none;">
+													<div class="main_itoggle">
+													<div id="adg_enable_on_of">
+														<input type="checkbox" id="adg_enable_fake" <% nvram_match_x("", "adg_enable", "1", "value=1 checked"); %><% nvram_match_x("", "adg_enable", "0", "value=0"); %>  />
+													</div>
+												</div>
+												<div style="position: absolute; margin-left: -10000px;">
+													<input type="radio" value="1" name="adg_enable" id="adg_enable_1" class="input" value="1" <% nvram_match_x("", "adg_enable", "1", "checked"); %> /><#checkbox_Yes#>
+													<input type="radio" value="0" name="adg_enable" id="adg_enable_0" class="input" value="0" <% nvram_match_x("", "adg_enable", "0", "checked"); %> /><#checkbox_No#>
+												</div>
+											</td>
+										</tr>
+										</tr>
+                                         <tr>
+											<th><a class="help_tooltip" href="javascript: void(0)" onmouseover="openTooltip(this, 1, 1);">DNS Redirect</a></th>
+											<td>
+												<select name="adg_redirect" class="input" style="width: 200px">
+													<option value="0" <% nvram_match_x("","adg_redirect", "0","selected"); %>>None</option>
+													<option value="1" <% nvram_match_x("","adg_redirect", "1","selected"); %>>As dnsmasq upstream server</option>
+													<option value="2" <% nvram_match_x("","adg_redirect", "2","selected"); %>>Redirect port 53 to AdGuardHome</option>
+												</select>
+											</td>
+										</tr>
+										<tr>
+											<th>Web Admin Address:</th>
+											<td>
+											<a href="http://<% nvram_get_x("", "lan_ipaddr"); %>:3030">http://<% nvram_get_x("", "lan_ipaddr"); %>:3030</a>
+											</td>
+										</tr>
+										
+<tr id="row_post_wan_script">
+											<td colspan="2">
+												<i class="icon-hand-right"></i> <a href="javascript:spoiler_toggle('script2')"><span>adg config parameters - do not modify if unsure!!!</span></a>
+												<div id="script2">
+													<textarea rows="18" wrap="off" spellcheck="false" maxlength="314571" class="span12" name="scripts.adg.sh" style="font-family:'Courier New'; font-size:12px;"><% nvram_dump("scripts.adg.sh",""); %></textarea>
+												</div>
+											</td>
+										</tr>
+										<tr>
+											<td colspan="2" style="border-top: 0 none;">
+												<br />
+												<center><input class="btn btn-primary" style="width: 219px" type="button" value="<#CTL_apply#>" onclick="applyRule()" /></center>
+											</td>
+										</tr>
+									</table>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
 
-<iframe name="hidden_frame" id="hidden_frame" width="0" height="0" frameborder="0"></iframe>
+	</form>
 
+	<div id="footer"></div>
+</div>
 </body>
 </html>
