@@ -561,6 +561,11 @@ void stop_adguardhome(void);
 void start_adguardhome(void);
 void restart_adguardhome(void);
 #endif
+#if defined(APP_SINGBOX)
+void stop_singbox(void);
+void start_singbox(void);
+void restart_singbox(void);
+#endif
 #if defined(APP_ADBYBY)
 void stop_adbyby(void);
 void start_adbyby(void);
