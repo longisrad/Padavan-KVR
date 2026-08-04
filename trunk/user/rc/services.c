@@ -1191,6 +1191,9 @@ stop_services(int stopall)
 #if defined(APP_ADGUARDHOME)
 	stop_adguardhome();
 #endif
+#if defined(APP_SINGBOX)
+    stop_singbox();
+#endif
 #if defined(APP_SHADOWSOCKS)
 	stop_ss();
 	stop_ss_tunnel();
