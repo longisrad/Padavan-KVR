@@ -615,6 +615,10 @@ if (found_app_v2raya()){
 	v2raya_array = new Array("","Advanced_v2raya.asp");
 	tablink[34] = (v2raya_array);
 }
+if (found_app_singbox()){
+    singbox_array = new Array("", "Advanced_singbox.asp");
+    tablink[35] = singbox_array;
+}
 
 //Level 2 Menu
 menuL2_title = new Array(23)
