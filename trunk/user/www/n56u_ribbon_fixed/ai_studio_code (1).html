@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>ASUS Wireless Router Web Manager</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="-1">
+<link rel="shortcut icon" href="images/favicon.png">
+<link rel="icon" href="images/favicon.png">
+<link rel="stylesheet" type="text/css" href="/bootstrap/css/bootstrap.min.css">
+<link rel="stylesheet" type="text/css" href="/bootstrap/css/main.css">
+
+<script type="text/javascript" src="/jquery.js"></script>
+<script type="text/javascript" src="/bootstrap/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="/state.js"></script>
+<script type="text/javascript" src="/general.js"></script>
+<script type="text/javascript" src="/itoggle.js"></script>
+<script type="text/javascript" src="/popup.js"></script>
+
+<script>
+var $j = jQuery.noConflict();
+
+function initial(){
+	show_banner(2);
+	show_menu('ifm_singbox', 0, 0);
+	show_footer();
+	
+	// Kiểm tra trạng thái và cập nhật Link Dashboard ban đầu
+	check_singbox_status();
+	
+	// Tự động kiểm tra lại trạng thái mỗi 3 giây
+	setInterval(check_singbox_status, 3000);
+}
+
+function check_singbox_status(){
+	$j.ajax({
+		url: '/status_singbox.asp', // hoặc endpoint trả về trạng thái chạy
+		type: 'GET',
+		dataType: 'text',
+		timeout: 2000,
+		success: function(response){
+			// Giả định response trả về 1 (Đang chạy) hoặc 0 (Đã dừng)
+			var isRunning = (response.trim() === "1");
+			update_dashboard_ui(isRunning);
+		},
+		error: function(){
+			// Nếu chưa có file status API, fallback kiểm tra theo nvram_get
+			var enable_val = "<% nvram_get_x("", "singbox_enable"); %>";
+			update_dashboard_ui(enable_val === "1");
+		}
+	});
+}
+
+function update_dashboard_ui(isRunning){
+	var port = document.form.singbox_dash_port.value || "9090";
+	var routerIP = window.location.hostname; // Tự động lấy IP/Domain Router hiện tại
+	var dashboardURL = "http://" + routerIP + ":" + port + "/ui/";
+	
+	var statusBadge = document.getElementById("singbox_status_badge");
+	var linkContainer = document.getElementById("dashboard_link_container");
+	
+	if(isRunning){
+		statusBadge.className = "label label-success";
+		statusBadge.innerHTML = "Đang hoạt động";
+		
+		// Tự động xuất nút bấm chứa Link truy cập Dashboard
+		linkContainer.innerHTML = 
+			'<div class="alert alert-info" style="margin-top: 10px;">' +
+				'<h4><i class="icon-ok-sign"></i> Sing-Box đã khởi động thành công!</h4>' +
+				'<p style="margin-top: 8px;">Bấm vào nút bên dưới để mở trang quản trị Dashboard:</p>' +
+				'<p style="margin-top: 10px;">' +
+					'<a href="' + dashboardURL + '" target="_blank" class="btn btn-large btn-primary" style="font-weight: bold;">' +
+						'<i class="icon-share-alt icon-white"></i> Truy cập Dashboard (' + dashboardURL + ')' +
+					'</a>' +
+				'</p>' +
+			'</div>';
+	} else {
+		statusBadge.className = "label label-important";
+		statusBadge.innerHTML = "Đã dừng";
+		
+		linkContainer.innerHTML = 
+			'<div class="alert alert-warning" style="margin-top: 10px;">' +
+				'<i class="icon-info-sign"></i> Dịch vụ chưa khởi động. Vui lòng bật Sing-Box và nhấn <b>Áp dụng</b> để xuất link Dashboard.' +
+			'</div>';
+	}
+}
+
+function applyRule(){
+	showLoading();
+	document.form.action_mode.value = " Apply ";
+	document.form.submit();
+}
+</script>
+</head>
+
+<body onload="initial();">
+<div id="TopBanner"></div>
+<div id="Loading" class="popup_bg"></div>
+
+<iframe name="hidden_frame" id="hidden_frame" width="0" height="0" frameborder="0"></iframe>
+
+<form method="post" name="form" action="/start_apply.htm" target="hidden_frame">
+<input type="hidden" name="current_page" value="Advanced_singbox.asp">
+<input type="hidden" name="next_page" value="Advanced_singbox.asp">
+<input type="hidden" name="action_mode" value="">
+<input type="hidden" name="action_script" value="restart_singbox">
+
+<div class="container-fluid">
+	<div class="row-fluid">
+		<div class="span3"><div id="mainMenu"></div><div id="subMenu"></div></div>
+		<div class="span9">
+			<div class="box well">
+				<h2>Cấu Hình Sing-Box Proxy</h2>
+				<div class="alert alert-info">Sing-Box là bộ công cụ proxy đa nền tảng mạnh mẽ. Dưới đây là trang quản lý và truy cập Dashboard của dịch vụ.</div>
+				
+				<table class="table">
+					<tr>
+						<th width="30%">Trạng thái dịch vụ</th>
+						<td>
+							<span id="singbox_status_badge" class="label">Đang kiểm tra...</span>
+						</td>
+					</tr>
+					<tr>
+						<th>Bật Sing-Box</th>
+						<td>
+							<input type="checkbox" id="singbox_enable_fake" <% nvram_match_x("", "singbox_enable", "1", "checked"); %> onclick="this.nextElementSibling.value=this.checked?1:0;">
+							<input type="hidden" name="singbox_enable" value="<% nvram_get_x("", "singbox_enable"); %>">
+						</td>
+					</tr>
+					<tr>
+						<th>Cổng Dashboard (Clash API Port)</th>
+						<td>
+							<input type="text" name="singbox_dash_port" class="input" style="width: 80px;" maxlength="5" value="<% nvram_get_x("", "singbox_dash_port"); %>" placeholder="9090" onkeyup="check_singbox_status();">
+							&nbsp;<span style="color:#888;">(Mặc định: 9090)</span>
+						</td>
+					</tr>
+					<tr>
+						<th>Secret Key (Nếu có)</th>
+						<td>
+							<input type="password" name="singbox_secret" class="input" style="width: 200px;" value="<% nvram_get_x("", "singbox_secret"); %>">
+						</td>
+					</tr>
+					<tr>
+						<th>Liên kết Dashboard</th>
+						<td>
+							<!-- Nơi JavaScript tự động xuất Link Dashboard sau khi khởi động thành công -->
+							<div id="dashboard_link_container"></div>
+						</td>
+					</tr>
+				</table>
+
+				<div class="form-actions">
+					<input class="btn btn-primary" type="button" value="Áp dụng" onclick="applyRule();">
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+</form>
+
+<div id="footer"></div>
+</body>
+</html>
