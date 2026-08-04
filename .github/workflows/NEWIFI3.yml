@@ -47,28 +47,34 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.24'
-    - name: Build sing-box from source (mipsle)
+    - name: Build sing-box standalone binary (mipsle)
       run: |
         SB_TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
         echo "Latest sing-box version: $SB_TAG"
         [ -z "$SB_TAG" ] && SB_TAG="v1.13.12"
-        sudo apt-get update -y
-        go version
+        
         git clone --depth=1 --branch "$SB_TAG" https://github.com/SagerNet/sing-box.git /tmp/sing-box-src
         cd /tmp/sing-box-src
         export GOOS=linux
         export GOARCH=mipsle
         export GOMIPS=softfloat
         export CGO_ENABLED=0
+        
+        # Tạo thư mục chứa file Release
+        mkdir -p /opt/images
+        
+        # Build trực tiếp ra thư mục /opt/images/
         go build -trimpath \
           -tags "with_quic,with_grpc,with_wireguard,with_utls,with_clash_api" \
           -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=${SB_TAG}" \
-          -o ${{ github.workspace }}/sing-box.bin \
+          -o /opt/images/sing-box-mipsle.bin \
           ./cmd/sing-box
-        ls -la ${{ github.workspace }}/sing-box.bin
+        
+        # Nén UPX để giảm dung lượng file
+        upx --lzma --best /opt/images/sing-box-mipsle.bin
+        
+        ls -lh /opt/images/sing-box-mipsle.bin
         echo "SB_TAG=${SB_TAG}" >> $GITHUB_ENV
-        mkdir -p /opt/images
-        cp -f /tmp/sing-box-mipsle.bin /opt/images/sing-box-mipsle.bin
     - name: Build Firmware
       env:
         TNAME: NEWIFI3
