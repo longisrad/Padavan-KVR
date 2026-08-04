@@ -47,7 +47,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.24'
-    - name: Build sing-box & Update SH Link
+    - name: Build sing-box & Auto-config SH script
       run: |
         SB_TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
         echo "Latest sing-box version: $SB_TAG"
@@ -70,20 +70,22 @@ jobs:
         
         upx --lzma --best /opt/images/sing-box-mipsle.bin
         
-        # 2. Tạo đường dẫn Link Release chuẩn bị phát hành
-        TAG=$(date '+%Y-%m-%d')
-        RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/sing-box-mipsle.bin"
-        echo "Generated Release URL: ${RELEASE_URL}"
+        # 2. Tìm file singbox.sh trong mã nguồn Padavan và thay thế thông tin tự động
+        SH_FILE=$(find /opt/rt-n56u/trunk/user/ -name "*singbox*.sh" -o -name "singbox.sh" | head -n 1)
         
-        # 3. Điền tự động Link vào file .sh của bạn
-        # (Thay đường dẫn '/opt/rt-n56u/trunk/user/singbox/singbox.sh' bên dưới bằng đường dẫn thực tế file .sh của bạn)
-        SH_PATH=$(find /opt/rt-n56u/trunk/user/ -name "*.sh" | grep -i "singbox" | head -n 1)
-        
-        if [ -f "$SH_PATH" ]; then
-          echo "Found SH file at: $SH_PATH"
-          sed -i "s|SINGBOX_URL_PLACEHOLDER|${RELEASE_URL}|g" "$SH_PATH"
+        if [ -f "$SH_FILE" ]; then
+          echo "Found script file at: $SH_FILE"
+          
+          # Tự động thay tên repo yourname/padavan-KVR thành tên repo hiện tại
+          sed -i "s|REPO=\"yourname/padavan-KVR\"|REPO=\"${GITHUB_REPOSITORY}\"|g" "$SH_FILE"
+          
+          # Tự động thay ASSET_NAME thành sing-box-mipsle.bin
+          sed -i "s|ASSET_NAME=\"sing-box.bin\"|ASSET_NAME=\"sing-box-mipsle.bin\"|g" "$SH_FILE"
+          
+          echo "=== KET QUA AUTO-CONFIG TRONG FILE SH ==="
+          grep -E "REPO=|ASSET_NAME=" "$SH_FILE"
         else
-          echo "Bao loi: Khong tim thay file .sh cua ban!"
+          echo "WARNING: Khong tim thay file singbox.sh trong thu muc /opt/rt-n56u/trunk/user/"
         fi
         
         echo "SB_TAG=${SB_TAG}" >> $GITHUB_ENV
