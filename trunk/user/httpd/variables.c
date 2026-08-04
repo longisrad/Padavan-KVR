@@ -1742,6 +1742,9 @@
 #if defined(APP_ADGUARDHOME)
 		{"AdguardHomeConf",		variables_AdguardHomeConf},
 #endif
+#if defined(APP_SINGBOX)
+        {"SingboxConf",         variables_SingboxConf},
+#endif
 #if defined(APP_CADDY)
 		{"CaddyConf",		variables_CaddyConf},
 #endif
