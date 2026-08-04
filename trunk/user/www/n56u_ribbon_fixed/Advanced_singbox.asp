@@ -15,10 +15,27 @@
 <script type="text/javascript" src="/help.js"></script>
 
 <script>
+var $j = jQuery.noConflict();
+
 function initial(){
 	show_banner(2);
-	show_menu(5, 30, 0);
+	show_menu(5, 36, 0); // Đã sửa chỉ số Menu thành 36
 	show_footer();
+	check_singbox_status();
+}
+
+function check_singbox_status(){
+	$j.get('/update_action.asp', {output: 'singbox_status'}, function(data){
+		eval(data);
+		var status_str = "";
+		if (typeof(singbox_status) === 'function' && singbox_status() > 0) {
+			status_str = '<span class="label label-success">Running</span>';
+		} else {
+			status_str = '<span class="label label-important">Stopped</span>';
+		}
+		$j("#singbox_status_text").html(status_str);
+		setTimeout(check_singbox_status, 5000);
+	});
 }
 
 function applyRule(){
@@ -30,9 +47,8 @@ function applyRule(){
 }
 
 function clearLog(){
-	var $j = jQuery.noConflict();
 	$j.post('/apply.cgi', { 'action_mode': ' ClearSingboxLog ' })
-		.always(function(){ setTimeout(function(){ location.reload(); }, 2000); });
+		.always(function(){ setTimeout(function(){ location.reload(); }, 1500); });
 }
 </script>
 </head>
@@ -72,12 +88,16 @@ function clearLog(){
 
 	<div class="alert alert-info" style="margin:10px;">
 		A universal proxy platform supporting VLESS, VMess, Trojan, Shadowsocks, Hysteria2 and more.
-		<div>Project page: <a href="https://github.com/SagerNet/sing-box" target="blank">https://github.com/SagerNet/sing-box</a></div>
+		<div>Project page: <a href="https://github.com/SagerNet/sing-box" target="_blank">https://github.com/SagerNet/sing-box</a></div>
 		<div style="color:#888;">Binary is downloaded from this firmware's own GitHub Release (built from source, not bundled in squashfs).</div>
 	</div>
 
 	<table width="100%" cellpadding="4" cellspacing="0" class="table">
 	<tr><th colspan="2" style="background-color:#756c78;">Control</th></tr>
+	<tr>
+		<th width="30%">Service Status</th>
+		<td><div id="singbox_status_text"><span class="label">Checking...</span></div></td>
+	</tr>
 	<tr>
 		<th width="30%">Enable sing-box</th>
 		<td>
@@ -100,7 +120,7 @@ function clearLog(){
 	<tr>
 		<td>
 			<span style="color:#888;">Paste your full sing-box config.json here (inbounds/outbounds/route/dns). Invalid JSON will fail to start - check the log tab below after Apply.</span><br>
-			<textarea name="singbox_config" class="input" style="width:100%; height:400px; font-family:'Courier New',monospace; font-size:12px;"><% nvram_dump_x("scripts.singbox.conf",""); %></textarea>
+			<textarea name="scripts.singbox.conf" class="input" style="width:100%; height:400px; font-family:'Courier New',monospace; font-size:12px;"><% nvram_dump("scripts.singbox.conf",""); %></textarea>
 		</td>
 	</tr>
 	</table>
