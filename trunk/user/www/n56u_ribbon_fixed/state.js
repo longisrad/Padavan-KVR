@@ -484,6 +484,11 @@ if (found_app_virtualhere()){
 if (found_app_v2raya()){
 	tabtitle[34] = new Array("", "V2RayA");
 }
+if (found_app_singbox()){
+    singbox_array = new Array("", "Advanced_singbox.asp");
+    tabtitle[35] = new Array("", "Sing-Box");
+    tablink[35] = singbox_array;
+}
 
 //Level 3 Tab title
 
