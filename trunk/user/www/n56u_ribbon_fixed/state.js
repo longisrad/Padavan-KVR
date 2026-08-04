@@ -820,6 +820,9 @@ if (found_app_virtualhere()){
 if (found_app_v2raya()){
 	menuL2_link.push(v2raya_array[1]);
 } else menuL2_link.push("");
+if (found_app_singbox()){
+    menuL2_link.push(singbox_array[1]);
+} else menuL2_link.push("");
 
 //Level 1 Menu in Gateway, Router mode
 menuL1_title = new Array("", "<#menu1#>", "", "<#menu2#>", "<#menu6#>", "<#menu4#>", "<#menu5_8#>", "<#menu5#>");
