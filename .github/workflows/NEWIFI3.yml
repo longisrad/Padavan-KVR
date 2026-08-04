@@ -43,6 +43,27 @@ jobs:
         sed -i 's/size_etc="6M"/size_etc="18M"/g' /opt/rt-n56u/trunk/user/scripts/dev_init.sh
         sed -i 's/size_tmp="24M"/size_tmp="120M"/g' /opt/rt-n56u/trunk/user/scripts/dev_init.sh
         sed -i 's/mtd_part_size=65536/mtd_part_size=18874368/g' /opt/rt-n56u/trunk/user/scripts/mtd_storage.sh
+     - name: Build sing-box from source (mipsle)
+       run: |
+        SB_TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+        echo "Latest sing-box version: $SB_TAG"
+        [ -z "$SB_TAG" ] && SB_TAG="v1.13.12"
+        sudo apt-get update -y
+        sudo apt-get install -y golang-go
+        go version
+        git clone --depth=1 --branch "$SB_TAG" https://github.com/SagerNet/sing-box.git /tmp/sing-box-src
+        cd /tmp/sing-box-src
+        export GOOS=linux
+        export GOARCH=mipsle
+        export GOMIPS=softfloat
+        export CGO_ENABLED=0
+        go build -trimpath \
+          -tags "with_quic,with_grpc,with_wireguard,with_utls,with_clash_api" \
+          -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=${SB_TAG}" \
+          -o ${{ github.workspace }}/sing-box.bin \
+          ./cmd/sing-box
+        ls -la ${{ github.workspace }}/sing-box.bin
+        echo "SB_TAG=${SB_TAG}" >> $GITHUB_ENV
     - name: Build Firmware
       env:
         TNAME: NEWIFI3
