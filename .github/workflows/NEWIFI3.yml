@@ -53,7 +53,6 @@ jobs:
         echo "Latest sing-box version: $SB_TAG"
         [ -z "$SB_TAG" ] && SB_TAG="v1.13.12"
         sudo apt-get update -y
-        sudo apt-get install -y golang-go
         go version
         git clone --depth=1 --branch "$SB_TAG" https://github.com/SagerNet/sing-box.git /tmp/sing-box-src
         cd /tmp/sing-box-src
@@ -68,6 +67,8 @@ jobs:
           ./cmd/sing-box
         ls -la ${{ github.workspace }}/sing-box.bin
         echo "SB_TAG=${SB_TAG}" >> $GITHUB_ENV
+        mkdir -p /opt/images
+        cp -f /tmp/sing-box-mipsle.bin /opt/images/sing-box-mipsle.bin
     - name: Build Firmware
       env:
         TNAME: NEWIFI3
