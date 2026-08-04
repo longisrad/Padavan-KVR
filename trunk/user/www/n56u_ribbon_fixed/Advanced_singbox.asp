@@ -1,163 +1,210 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>ASUS Wireless Router Web Manager</title>
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="-1">
-<link rel="shortcut icon" href="images/favicon.png">
-<link rel="icon" href="images/favicon.png">
+<title><#Web_Title#> - sing-box</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <link rel="stylesheet" type="text/css" href="/bootstrap/css/bootstrap.min.css">
 <link rel="stylesheet" type="text/css" href="/bootstrap/css/main.css">
-
+<link rel="stylesheet" type="text/css" href="/bootstrap/css/engage.itoggle.css">
 <script type="text/javascript" src="/jquery.js"></script>
 <script type="text/javascript" src="/bootstrap/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="/bootstrap/js/engage.itoggle.min.js"></script>
 <script type="text/javascript" src="/state.js"></script>
 <script type="text/javascript" src="/general.js"></script>
-<script type="text/javascript" src="/itoggle.js"></script>
 <script type="text/javascript" src="/popup.js"></script>
+<script type="text/javascript" src="/help.js"></script>
 
 <script>
 var $j = jQuery.noConflict();
 
 function initial(){
 	show_banner(2);
-	show_menu('ifm_singbox', 0, 0);
+	show_menu(5, 35, 0); // Chỉ số Menu Sing-box
 	show_footer();
-	
-	// Kiểm tra trạng thái và cập nhật Link Dashboard ban đầu
 	check_singbox_status();
+}
+
+function update_singbox_link(){
+	var dashUrl = document.getElementById('sb_dash_url_raw').value;
+	var info = document.getElementById('sb_info_raw').value;
 	
-	// Tự động kiểm tra lại trạng thái mỗi 3 giây
-	setInterval(check_singbox_status, 3000);
+	// Nếu chưa có URL trong NVRAM, tự động tạo theo IP Router và Cổng Dashboard
+	if (!dashUrl || dashUrl.length == 0) {
+		var isRunning = (typeof(singbox_status) === 'function' && singbox_status() > 0);
+		var isEnabled = document.form.singbox_enable && document.form.singbox_enable.value == "1";
+		if (isRunning || isEnabled) {
+			var port = "<% nvram_get_x("", "singbox_dash_port"); %>";
+			if (!port || port == "0" || port == "") port = "9090";
+			dashUrl = "http://" + window.location.hostname + ":" + port + "/ui/";
+		}
+	}
+
+	if (dashUrl && dashUrl.length > 0) {
+		document.getElementById('sb_dash_link').href = dashUrl;
+		document.getElementById('sb_dash_link').innerHTML = dashUrl;
+		document.getElementById('sb_link_box').style.display = '';
+	} else {
+		document.getElementById('sb_link_box').style.display = 'none';
+	}
+
+	if (info && info.length > 0) {
+		document.getElementById('sb_account_text').innerHTML = info;
+		document.getElementById('sb_account_box').style.display = '';
+	} else {
+		document.getElementById('sb_account_box').style.display = 'none';
+	}
 }
 
 function check_singbox_status(){
-	$j.ajax({
-		url: '/status_singbox.asp', // hoặc endpoint trả về trạng thái chạy
-		type: 'GET',
-		dataType: 'text',
-		timeout: 2000,
-		success: function(response){
-			// Giả định response trả về 1 (Đang chạy) hoặc 0 (Đã dừng)
-			var isRunning = (response.trim() === "1");
-			update_dashboard_ui(isRunning);
-		},
-		error: function(){
-			// Nếu chưa có file status API, fallback kiểm tra theo nvram_get
-			var enable_val = "<% nvram_get_x("", "singbox_enable"); %>";
-			update_dashboard_ui(enable_val === "1");
+	$j.get('/update_action.asp', {output: 'singbox_status'}, function(data){
+		eval(data);
+		var status_str = "";
+		if (typeof(singbox_status) === 'function' && singbox_status() > 0) {
+			status_str = '<span class="label label-success">Running</span>';
+		} else {
+			status_str = '<span class="label label-important">Stopped</span>';
 		}
+		$j("#singbox_status_text").html(status_str);
+		
+		// Cập nhật lại khung Link mỗi khi check trạng thái (giống Tailscale)
+		update_singbox_link();
+		
+		setTimeout(check_singbox_status, 5000);
 	});
-}
-
-function update_dashboard_ui(isRunning){
-	var port = document.form.singbox_dash_port.value || "9090";
-	var routerIP = window.location.hostname; // Tự động lấy IP/Domain Router hiện tại
-	var dashboardURL = "http://" + routerIP + ":" + port + "/ui/";
-	
-	var statusBadge = document.getElementById("singbox_status_badge");
-	var linkContainer = document.getElementById("dashboard_link_container");
-	
-	if(isRunning){
-		statusBadge.className = "label label-success";
-		statusBadge.innerHTML = "Đang hoạt động";
-		
-		// Tự động xuất nút bấm chứa Link truy cập Dashboard
-		linkContainer.innerHTML = 
-			'<div class="alert alert-info" style="margin-top: 10px;">' +
-				'<h4><i class="icon-ok-sign"></i> Sing-Box đã khởi động thành công!</h4>' +
-				'<p style="margin-top: 8px;">Bấm vào nút bên dưới để mở trang quản trị Dashboard:</p>' +
-				'<p style="margin-top: 10px;">' +
-					'<a href="' + dashboardURL + '" target="_blank" class="btn btn-large btn-primary" style="font-weight: bold;">' +
-						'<i class="icon-share-alt icon-white"></i> Truy cập Dashboard (' + dashboardURL + ')' +
-					'</a>' +
-				'</p>' +
-			'</div>';
-	} else {
-		statusBadge.className = "label label-important";
-		statusBadge.innerHTML = "Đã dừng";
-		
-		linkContainer.innerHTML = 
-			'<div class="alert alert-warning" style="margin-top: 10px;">' +
-				'<i class="icon-info-sign"></i> Dịch vụ chưa khởi động. Vui lòng bật Sing-Box và nhấn <b>Áp dụng</b> để xuất link Dashboard.' +
-			'</div>';
-	}
 }
 
 function applyRule(){
 	showLoading();
 	document.form.action_mode.value = " Apply ";
+	document.form.action_script.value = "restart_singbox";
+	document.form.current_page.value = "/Advanced_singbox.asp";
 	document.form.submit();
+}
+
+function clearLog(){
+	$j.post('/apply.cgi', { 'action_mode': ' ClearSingboxLog ' })
+		.always(function(){ setTimeout(function(){ location.reload(); }, 1500); });
 }
 </script>
 </head>
 
 <body onload="initial();">
-<div id="TopBanner"></div>
-<div id="Loading" class="popup_bg"></div>
-
-<iframe name="hidden_frame" id="hidden_frame" width="0" height="0" frameborder="0"></iframe>
-
-<form method="post" name="form" action="/start_apply.htm" target="hidden_frame">
-<input type="hidden" name="current_page" value="Advanced_singbox.asp">
-<input type="hidden" name="next_page" value="Advanced_singbox.asp">
-<input type="hidden" name="action_mode" value="">
-<input type="hidden" name="action_script" value="restart_singbox">
-
-<div class="container-fluid">
-	<div class="row-fluid">
-		<div class="span3"><div id="mainMenu"></div><div id="subMenu"></div></div>
-		<div class="span9">
-			<div class="box well">
-				<h2>Cấu Hình Sing-Box Proxy</h2>
-				<div class="alert alert-info">Sing-Box là bộ công cụ proxy đa nền tảng mạnh mẽ. Dưới đây là trang quản lý và truy cập Dashboard của dịch vụ.</div>
-				
-				<table class="table">
-					<tr>
-						<th width="30%">Trạng thái dịch vụ</th>
-						<td>
-							<span id="singbox_status_badge" class="label">Đang kiểm tra...</span>
-						</td>
-					</tr>
-					<tr>
-						<th>Bật Sing-Box</th>
-						<td>
-							<input type="checkbox" id="singbox_enable_fake" <% nvram_match_x("", "singbox_enable", "1", "checked"); %> onclick="this.nextElementSibling.value=this.checked?1:0;">
-							<input type="hidden" name="singbox_enable" value="<% nvram_get_x("", "singbox_enable"); %>">
-						</td>
-					</tr>
-					<tr>
-						<th>Cổng Dashboard (Clash API Port)</th>
-						<td>
-							<input type="text" name="singbox_dash_port" class="input" style="width: 80px;" maxlength="5" value="<% nvram_get_x("", "singbox_dash_port"); %>" placeholder="9090" onkeyup="check_singbox_status();">
-							&nbsp;<span style="color:#888;">(Mặc định: 9090)</span>
-						</td>
-					</tr>
-					<tr>
-						<th>Secret Key (Nếu có)</th>
-						<td>
-							<input type="password" name="singbox_secret" class="input" style="width: 200px;" value="<% nvram_get_x("", "singbox_secret"); %>">
-						</td>
-					</tr>
-					<tr>
-						<th>Liên kết Dashboard</th>
-						<td>
-							<!-- Nơi JavaScript tự động xuất Link Dashboard sau khi khởi động thành công -->
-							<div id="dashboard_link_container"></div>
-						</td>
-					</tr>
-				</table>
-
-				<div class="form-actions">
-					<input class="btn btn-primary" type="button" value="Áp dụng" onclick="applyRule();">
-				</div>
-			</div>
+<div class="wrapper">
+	<div class="container-fluid" style="padding-right:0px">
+		<div class="row-fluid">
+			<div class="span3"><center><div id="logo"></div></center></div>
+			<div class="span9"><div id="TopBanner"></div></div>
 		</div>
 	</div>
-</div>
-</form>
+	<div id="Loading" class="popup_bg"></div>
+	<iframe name="hidden_frame" id="hidden_frame" width="0" height="0" frameborder="0"></iframe>
 
-<div id="footer"></div>
+	<form method="post" name="form" action="/start_apply.htm" target="hidden_frame">
+	<input type="hidden" name="current_page" value="Advanced_singbox.asp">
+	<input type="hidden" name="next_page" value="">
+	<input type="hidden" name="sid_list" value="SingboxConf;">
+	<input type="hidden" name="action_mode" value="">
+	<input type="hidden" name="action_script" value="">
+
+	<div class="container-fluid">
+	<div class="row-fluid">
+	<div class="span3">
+	<div class="well sidebar-nav side_nav" style="padding:0px;">
+		<ul id="mainMenu" class="clearfix"></ul>
+		<ul class="clearfix"><li><div id="subMenu" class="accordion"></div></li></ul>
+	</div>
+	</div>
+
+	<div class="span9">
+	<div class="row-fluid"><div class="span12">
+	<div class="box well grad_colour_dark_blue">
+	<h2 class="box_head round_top">sing-box</h2>
+	<div class="round_bottom">
+
+	<div class="alert alert-info" style="margin:10px;">
+		A universal proxy platform supporting VLESS, VMess, Trojan, Shadowsocks, Hysteria2 and more.
+		<div>Project page: <a href="https://github.com/SagerNet/sing-box" target="_blank">https://github.com/SagerNet/sing-box</a></div>
+		<div style="color:#888;">Binary is downloaded from this firmware's own GitHub Release (built from source, not bundled in squashfs).</div>
+	</div>
+
+	<!-- Khung hiển thị Link Dashboard / Web UI nổi bật (Chuẩn cơ chế Tailscale) -->
+	<div id="sb_link_box" class="alert alert-info" style="margin: 10px; display:none;">
+		<b>sing-box Web UI / Dashboard Link:</b><br>
+		Click the link below to open the sing-box management interface:
+		<div style="margin-top:8px; padding:8px; background:#fff; border-radius:4px; word-break:break-all;">
+			<a id="sb_dash_link" href="#" target="_blank" style="font-size:14px; font-weight:bold;"></a>
+		</div>
+		<span style="color:#888;">Ensure Clash API / external controller UI is enabled in your config.json.</span>
+	</div>
+	<div id="sb_account_box" class="alert alert-success" style="margin: 10px; display:none;">
+		<b>Status Info:</b> &nbsp; <span id="sb_account_text"></span>
+	</div>
+	
+	<!-- Đọc giá trị ngầm từ NVRAM tương tự Tailscale -->
+	<input type="hidden" id="sb_dash_url_raw" value="<% nvram_get_x("", "singbox_dash_url"); %>">
+	<input type="hidden" id="sb_info_raw" value="<% nvram_get_x("", "singbox_info"); %>">
+	<script>
+	(function(){
+		update_singbox_link();
+	})();
+	</script>
+
+	<table width="100%" cellpadding="4" cellspacing="0" class="table">
+	<tr><th colspan="2" style="background-color:#756c78;">Control</th></tr>
+	<tr>
+		<th width="30%">Service Status</th>
+		<td><div id="singbox_status_text"><span class="label">Checking...</span></div></td>
+	</tr>
+	<tr>
+		<th width="30%">Enable sing-box</th>
+		<td>
+			<select name="singbox_enable" class="input">
+				<option value="0" <% nvram_match_x("","singbox_enable","0","selected"); %>>Off</option>
+				<option value="1" <% nvram_match_x("","singbox_enable","1","selected"); %>>On</option>
+			</select>
+		</td>
+	</tr>
+	<tr>
+		<th width="30%">Local Proxy Port</th>
+		<td>
+			<span style="color:#888;">Set inside the config JSON below (default 7890, mixed HTTP+SOCKS)</span>
+		</td>
+	</tr>
+	</table>
+
+	<table width="100%" cellpadding="4" cellspacing="0" class="table">
+	<tr><th colspan="2" style="background-color:#756c78;">Configuration (raw JSON)</th></tr>
+	<tr>
+		<td>
+			<span style="color:#888;">Paste your full sing-box config.json here (inbounds/outbounds/route/dns). Invalid JSON will fail to start - check the log tab below after Apply.</span><br>
+			<textarea name="scripts.singbox.conf" class="input" style="width:100%; height:400px; font-family:'Courier New',monospace; font-size:12px;"><% nvram_dump("scripts.singbox.conf",""); %></textarea>
+		</td>
+	</tr>
+	</table>
+
+	<div style="margin:10px;">
+		<center><input class="btn btn-primary" style="width:219px" type="button" value="<#CTL_apply#>" onclick="applyRule()" /></center>
+	</div>
+
+	<table width="100%" cellpadding="4" cellspacing="0" class="table">
+	<tr><th colspan="2" style="background-color:#756c78;">Run Log
+		<input class="btn btn-danger" style="float:right;" type="button" value="Clear Log" onclick="clearLog()" />
+	</th></tr>
+	<tr>
+		<td>
+			<textarea rows="20" class="span12" readonly wrap="off" style="font-family:'Courier New',monospace; font-size:12px;"><% nvram_dump("sing-box.log",""); %></textarea>
+		</td>
+	</tr>
+	</table>
+
+	</div>
+	</div>
+	</div></div>
+	</div>
+	</div>
+	</div>
+	</form>
+	<div id="footer"></div>
+</div>
 </body>
 </html>
