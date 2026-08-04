@@ -2724,6 +2724,11 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 #else
 	int found_app_adguardhome = 0;
 #endif
+	#if defined(APP_SINGBOX)
+    int found_app_singbox = 1;
+#else
+    int found_app_singbox = 0;
+#endif
 #if defined(APP_CADDY)
 	int found_app_caddy = 1;
 #else
