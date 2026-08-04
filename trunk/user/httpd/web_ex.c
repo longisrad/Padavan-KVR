@@ -3097,6 +3097,7 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 		found_app_shadowsocks,
 		found_app_koolproxy,
 		found_app_adguardhome,
+		found_app_singbox,
 		found_app_caddy,
 		found_app_adbyby,
 		found_app_smartdns,
