@@ -206,7 +206,7 @@ function done_validating(action){
 											<i class="icon-hand-right"></i> <a href="javascript:spoiler_toggle('scripts.wireguard')"><span>Click to edit /etc/storage/wg0.conf config file</span></a>
 										<div id="scripts.wireguard" style="display:none;">
 											<textarea rows="18" wrap="off" spellcheck="false" maxlength="209715" class="span12" name="scripts.wg0.conf" style="font-family:'Courier New'; font-size:12px; height: 200px;""><% nvram_dump("scripts.wg0.conf",""); %></textarea>
-											<div>⚠️&nbsp;&nbsp;<span style="color: #ff8100;">Note: </span><span style="color:#888;">The config file does not support PostUp/PostDown script rules or specifying interface IP/DNS&nbsp;&nbsp;&nbsp;&nbsp;Generate config online: <a href="https://www.wireguardconfig.com/" target="blank">click here</a></span></div>
+											<div>⚠️&nbsp;&nbsp;<span style="color: #ff8100;">Note: </span><span style="color:#888;">The config file does not support PostUp/PostDown script rules or specifying interface IP/DNS (use the fields above for those). Routing is now applied automatically based on the AllowedIPs of each peer - no manual `ip route` step needed after Apply.&nbsp;&nbsp;&nbsp;&nbsp;Generate config online: <a href="https://www.wireguardconfig.com/" target="blank">click here</a></span></div>
 										</div>
 										</td>
 										</tr><td colspan="4"></td>
