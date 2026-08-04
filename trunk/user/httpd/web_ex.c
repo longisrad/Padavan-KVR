@@ -1968,6 +1968,15 @@ static int scutclient_version_hook(int eid, webs_t wp, int argc, char **argv)
 }
 #endif
 
+#if defined(APP_SINGBOX)
+static int singbox_status_hook(int eid, webs_t wp, int argc, char **argv)
+{
+    int singbox_status_code = pids("sing-box");
+    websWrite(wp, "function singbox_status() { return %d;}\n", singbox_status_code);
+    return 0;
+}
+#endif
+
 #if defined (APP_MENTOHUST)
 static int mentohust_action_hook(int eid, webs_t wp, int argc, char **argv)
 {
