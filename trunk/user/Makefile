@@ -261,6 +261,7 @@ dir_$(CONFIG_FIRMWARE_INCLUDE_BAFA)	                       += bafa
 dir_$(CONFIG_FIRMWARE_INCLUDE_VIRTUALHERE)	                       += virtualhere
 dir_$(CONFIG_FIRMWARE_INCLUDE_V2RAYA)	                       += v2raya
 dir_$(CONFIG_FIRMWARE_INCLUDE_N2N)	                       += n2n
+dir_y							+= singbox
 ifdef CONFIG_MTD_UBI
 ifneq ($(STORAGE_ENABLED),y)
 dir_y											+= optware
