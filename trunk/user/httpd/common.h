@@ -103,6 +103,8 @@ typedef u_int8_t u8;
 #define EVM_RESTART_ADGUARDHOME			(1ULL << 49) //adg去广告
 //#define EVM_RESTART_MENTOHUST			(1ULL << 50) //校园认证
 //#define EVM_RESTART_WYY			(1ULL << 50) //网易云
+#define EVM_RESTART_SINGBOX    (1ULL << 16)
+#define EVT_RESTART_SINGBOX    2
 #define EVM_RESTART_BAFA			(1ULL << 50) //巴法云
 //#define EVM_RESTART_ADBYBY			(1ULL << 51) //adb去广告
 #define EVM_RESTART_ZEROTIER			(1ULL << 51) //zeriter异地组网
