@@ -47,7 +47,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.24'
-    - name: Build sing-box standalone binary (mipsle)
+    - name: Build sing-box & Update SH Link
       run: |
         SB_TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
         echo "Latest sing-box version: $SB_TAG"
@@ -60,20 +60,32 @@ jobs:
         export GOMIPS=softfloat
         export CGO_ENABLED=0
         
-        # Tạo thư mục chứa file Release
+        # 1. Build file binary
         mkdir -p /opt/images
-        
-        # Build trực tiếp ra thư mục /opt/images/
         go build -trimpath \
           -tags "with_quic,with_grpc,with_wireguard,with_utls,with_clash_api" \
           -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=${SB_TAG}" \
           -o /opt/images/sing-box-mipsle.bin \
           ./cmd/sing-box
         
-        # Nén UPX để giảm dung lượng file
         upx --lzma --best /opt/images/sing-box-mipsle.bin
         
-        ls -lh /opt/images/sing-box-mipsle.bin
+        # 2. Tạo đường dẫn Link Release chuẩn bị phát hành
+        TAG=$(date '+%Y-%m-%d')
+        RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/sing-box-mipsle.bin"
+        echo "Generated Release URL: ${RELEASE_URL}"
+        
+        # 3. Điền tự động Link vào file .sh của bạn
+        # (Thay đường dẫn '/opt/rt-n56u/trunk/user/singbox/singbox.sh' bên dưới bằng đường dẫn thực tế file .sh của bạn)
+        SH_PATH=$(find /opt/rt-n56u/trunk/user/ -name "*.sh" | grep -i "singbox" | head -n 1)
+        
+        if [ -f "$SH_PATH" ]; then
+          echo "Found SH file at: $SH_PATH"
+          sed -i "s|SINGBOX_URL_PLACEHOLDER|${RELEASE_URL}|g" "$SH_PATH"
+        else
+          echo "Bao loi: Khong tim thay file .sh cua ban!"
+        fi
+        
         echo "SB_TAG=${SB_TAG}" >> $GITHUB_ENV
     - name: Build Firmware
       env:
