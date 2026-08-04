@@ -1255,6 +1255,14 @@
 	};
 #endif
 
+#if defined(APP_SINGBOX)
+    struct variable variables_SingboxConf[] = {
+            {"singbox_enable", "", NULL, EVM_RESTART_SINGBOX},
+            {"scripts.singbox.conf", "File", NULL, EVM_RESTART_SINGBOX},
+            {0,0,0,0}
+    };
+#endif
+
 #if defined(APP_ADBYBY)
     struct variable variables_AdbybyConf[] = {
 			{"adbyby_enable", "", NULL, EVM_RESTART_ADBYBY},
