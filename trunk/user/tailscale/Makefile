@@ -9,5 +9,5 @@ config_test:
 clean:
 
 romfs:
-	$(ROMFSINST) $(THISDIR)/tailscale.sh /usr/bin/tailscale.sh
+	$(ROMFSINST) -p +x $(THISDIR)/tailscale.sh /usr/bin/tailscale.sh
 
