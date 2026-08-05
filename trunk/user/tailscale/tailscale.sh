@@ -1,9 +1,5 @@
 #!/bin/sh
 
-# TỐI ƯU BỘ NHỚ RAM CHO GO RUNTIME (Rất quan trọng cho Tailscale trên MIPS)
-export GOMEMLIMIT=48MiB
-export GOGC=25
-
 ts_enable=$(nvram get tailscale_enable)
 ts_dns=$(nvram get tailscale_dns)
 ts_route=$(nvram get tailscale_route)
