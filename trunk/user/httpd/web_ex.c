@@ -1968,15 +1968,6 @@ static int scutclient_version_hook(int eid, webs_t wp, int argc, char **argv)
 }
 #endif
 
-#if defined(APP_SINGBOX)
-static int singbox_status_hook(int eid, webs_t wp, int argc, char **argv)
-{
-    int singbox_status_code = pids("sing-box");
-    websWrite(wp, "function singbox_status() { return %d;}\n", singbox_status_code);
-    return 0;
-}
-#endif
-
 #if defined (APP_MENTOHUST)
 static int mentohust_action_hook(int eid, webs_t wp, int argc, char **argv)
 {
@@ -2724,10 +2715,10 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 #else
 	int found_app_adguardhome = 0;
 #endif
-	#if defined(APP_SINGBOX)
-    int found_app_singbox = 1;
+#if defined(APP_SINGBOX)
+	int found_app_singbox = 1;
 #else
-    int found_app_singbox = 0;
+	int found_app_singbox = 0;
 #endif
 #if defined(APP_CADDY)
 	int found_app_caddy = 1;
@@ -3041,12 +3032,12 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 		"function found_app_scutclient() { return %d;}\n"
 		"function found_app_ttyd() { return %d;}\n"
 		"function found_app_vlmcsd() { return %d;}\n"
-		"function found_app_singbox() { return %d;}\n"
 		"function found_app_napt66() { return %d;}\n"
 		"function found_app_dnsforwarder() { return %d;}\n"
 		"function found_app_shadowsocks() { return %d;}\n"
 		"function found_app_koolproxy() { return %d;}\n"
 		"function found_app_adguardhome() { return %d;}\n"
+		"function found_app_singbox() { return %d;}\n"
 		"function found_app_caddy() { return %d;}\n"
 		"function found_app_adbyby() { return %d;}\n"
 		"function found_app_smartdns() { return %d;}\n"
@@ -4361,14 +4352,6 @@ apply_cgi(const char *url, webs_t wp)
 		websRedirect(wp, current_url);
 		return 0;
 	}
-	else if (!strcmp(value, " ClearSingboxLog "))
-	{
-#if defined(APP_SINGBOX)
-		unlink("/tmp/sing-box.log");
-#endif
-		websRedirect(wp, current_url);
-		return 0;
-	}
 	else if (!strcmp(value, " Restartv2raya "))
 	{
 #if defined(APP_V2RAYA)
@@ -5487,9 +5470,6 @@ struct ej_handler ej_handlers[] =
 	{ "rules_count", rules_count_hook},
 	{ "pdnsd_status", pdnsd_status_hook},
 	{ "dns2tcp_status", dns2tcp_status_hook},
-#endif
-#if defined(APP_SINGBOX)
-    { "singbox_status", singbox_status_hook},
 #endif
 #if defined (APP_KOOLPROXY)
 	{ "koolproxy_action", koolproxy_action_hook},

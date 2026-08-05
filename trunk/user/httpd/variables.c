@@ -1257,10 +1257,10 @@
 
 #if defined(APP_SINGBOX)
     struct variable variables_SingboxConf[] = {
-            {"singbox_enable", "", NULL, EVM_RESTART_SINGBOX},
-            {"scripts.singbox.conf", "File", NULL, EVM_RESTART_SINGBOX},
-            {0,0,0,0}
-    };
+			{"singbox_enable", "", NULL, EVM_RESTART_SINGBOX},
+			{"scripts.singbox.conf", "File", NULL, EVM_RESTART_SINGBOX},
+			{0,0,0,0}
+	};
 #endif
 
 #if defined(APP_ADBYBY)
@@ -1741,9 +1741,7 @@
 #endif
 #if defined(APP_ADGUARDHOME)
 		{"AdguardHomeConf",		variables_AdguardHomeConf},
-#endif
-#if defined(APP_SINGBOX)
-        {"SingboxConf",         variables_SingboxConf},
+		{"SingboxConf",		variables_SingboxConf},
 #endif
 #if defined(APP_CADDY)
 		{"CaddyConf",		variables_CaddyConf},
@@ -1906,9 +1904,7 @@
 #endif
 #if defined(APP_ADGUARDHOME)
 		{EVM_RESTART_ADGUARDHOME,		EVT_RESTART_ADGUARDHOME,		RCN_RESTART_ADGUARDHOME,	0},
-#endif
-#if defined(APP_SINGBOX)
-        {EVM_RESTART_SINGBOX,     EVT_RESTART_SINGBOX,     RCN_RESTART_SINGBOX,     0},
+		{EVM_RESTART_SINGBOX,		EVT_RESTART_SINGBOX,		RCN_RESTART_SINGBOX,	0},
 #endif
 #if defined(APP_CADDY)
 		{EVM_RESTART_CADDY,		EVT_RESTART_CADDY,		RCN_RESTART_CADDY,	0},
