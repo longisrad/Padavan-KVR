@@ -173,18 +173,27 @@ get_info() {
 }
 
 get_login() {
-	$tailscale status >/tmp/tailscale.status 2>&1
 	nvram set tailscale_login=""
-	if [ -n "$(grep 'Logged' /tmp/tailscale.status | grep 'out')" ] ; then
-		logger -t "【Tailscale】" "First install or key file empty, fetching device login URL..."
-		login_url=$(cat /tmp/tailscale.status | awk -F 'Log in at: ' '{print $2}')
-		logger -t "【Tailscale】" "Device login URL: $login_url"
-		nvram set tailscale_login="$login_url"
-		logger -t "【Tailscale】" "After binding, do not reboot immediately to avoid losing key state"
-		[ -z "$login_url" ] && logger -t "【Tailscale】" "Could not get device login URL, run '$tailscale login' manually via SSH"
-	else
-		get_info
-	fi
+	retry=0
+	login_url=""
+	while [ $retry -lt 15 ]; do
+		$tailscale status >/tmp/tailscale.status 2>&1
+		if [ -n "$(grep 'Logged' /tmp/tailscale.status | grep 'out')" ] ; then
+			login_url=$(cat /tmp/tailscale.status | awk -F 'Log in at: ' '{print $2}')
+			[ -n "$login_url" ] && break
+		else
+			get_info
+			rm -f /tmp/tailscale.status
+			return
+		fi
+		sleep 1
+		retry=$((retry + 1))
+	done
+	logger -t "【Tailscale】" "First install or key file empty, fetching device login URL..."
+	logger -t "【Tailscale】" "Device login URL: $login_url"
+	nvram set tailscale_login="$login_url"
+	logger -t "【Tailscale】" "After binding, do not reboot immediately to avoid losing key state"
+	[ -z "$login_url" ] && logger -t "【Tailscale】" "Could not get device login URL after ${retry}s, run '$tailscale login' manually via SSH"
 	rm -f /tmp/tailscale.status
 }
 
