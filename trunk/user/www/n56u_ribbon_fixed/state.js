@@ -478,14 +478,14 @@ if (found_app_easytier()){
 if (found_app_bafa()){
 	tabtitle[32] = new Array("", "巴法云");
 }
+if (found_app_singbox()){
+	tabtitle[35] = new Array("", "sing-box");
+}
 if (found_app_virtualhere()){
 	tabtitle[33] = new Array("", "VirtualHere");
 }
 if (found_app_v2raya()){
 	tabtitle[34] = new Array("", "V2RayA");
-}
-if (found_app_singbox()){
-    tabtitle[35] = new Array("", "Sing-Box");
 }
 
 //Level 3 Tab title
@@ -616,8 +616,8 @@ if (found_app_v2raya()){
 	tablink[34] = (v2raya_array);
 }
 if (found_app_singbox()){
-    singbox_array = new Array("", "Advanced_singbox.asp");
-    tablink[35] = singbox_array;
+	singbox_array = new Array("","Advanced_singbox.asp");
+	tablink[35] = (singbox_array);
 }
 
 //Level 2 Menu
@@ -734,7 +734,7 @@ if (found_app_v2raya()){
 } else menuL2_title.push("");
 
 if (found_app_singbox()){
-    menuL2_title.push("Sing-Box");
+	menuL2_title.push("sing-box");
 } else menuL2_title.push("");
 
 menuL2_link  = new Array("", tablink[0][1], tablink[1][1], tablink[2][1], tablink[3][1], tablink[4][1], tablink[5][1], tablink[6][1], tablink[7][1], support_2g_radio() ? tablink[8][1] : "Main_EStatus_Content.asp", tablink[9][1]);
@@ -827,7 +827,7 @@ if (found_app_v2raya()){
 	menuL2_link.push(v2raya_array[1]);
 } else menuL2_link.push("");
 if (found_app_singbox()){
-    menuL2_link.push(singbox_array[1]);
+	menuL2_link.push(singbox_array[1]);
 } else menuL2_link.push("");
 
 //Level 1 Menu in Gateway, Router mode
