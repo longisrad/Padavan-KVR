@@ -446,19 +446,20 @@ void restart_adguardhome(void){
 
 #if defined(APP_SINGBOX)
 void stop_singbox(void){
-    eval("/usr/bin/singbox.sh","stop");
+	eval("/usr/bin/singbox.sh","stop");
 }
 
 void start_singbox(void){
-    int singbox_enable = nvram_get_int("singbox_enable");
-    if (singbox_enable == 1)
-        eval("/usr/bin/singbox.sh","start");
+	int sb_mode = nvram_get_int("singbox_enable");
+	if ( sb_mode == 1)
+		eval("/usr/bin/singbox.sh","start");
 }
 
 void restart_singbox(void){
-    stop_singbox();
-    start_singbox();
+	stop_singbox();
+	start_singbox();
 }
+
 #endif
 
 #if defined(APP_WYY)
@@ -1192,7 +1193,7 @@ stop_services(int stopall)
 	stop_adguardhome();
 #endif
 #if defined(APP_SINGBOX)
-    stop_singbox();
+	stop_singbox();
 #endif
 #if defined(APP_SHADOWSOCKS)
 	stop_ss();

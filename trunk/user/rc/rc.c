@@ -1373,10 +1373,10 @@ handle_notifications(void)
 		}
 #endif
 #if defined(APP_SINGBOX)
-        else if (strcmp(entry->d_name, RCN_RESTART_SINGBOX) == 0)
-        {
-            restart_singbox();
-        }
+		else if (strcmp(entry->d_name, RCN_RESTART_SINGBOX) == 0)
+		{
+			restart_singbox();
+		}
 #endif
 #if defined(APP_SMARTDNS)
 		else if (strcmp(entry->d_name, RCN_RESTART_SMARTDNS) == 0)
