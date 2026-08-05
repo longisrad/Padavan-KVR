@@ -24,10 +24,6 @@ tailscale_renum=`nvram get tailscale_renum`
 
 BUNDLED_TS_BIN="/etc/tailscaled.bin"
 
-# TỐI ƯU BỘ NHỚ RAM CHO GO RUNTIME (Rất quan trọng cho Tailscale trên MIPS)
-export GOMEMLIMIT=48MiB
-export GOGC=25
-
 extract_bundled_ts() {
 	if [ -f "$BUNDLED_TS_BIN" ] ; then
 		bin_path=$(dirname "$tailscaled")
@@ -166,6 +162,10 @@ get_info() {
 		fi
 	fi
 }
+
+# TỐI ƯU BỘ NHỚ RAM CHO GO RUNTIME (Rất quan trọng cho Tailscale trên MIPS)
+export GOMEMLIMIT=48MiB
+export GOGC=25
 
 get_login() {
 	$tailscale status >/tmp/tailscale.status 2>&1
