@@ -1,9 +1,5 @@
 #!/bin/sh
 
-# TỐI ƯU BỘ NHỚ RAM CHO GO RUNTIME (Rất quan trọng cho Tailscale trên MIPS)
-export GOMEMLIMIT=48MiB
-export GOGC=25
-
 ts_enable=$(nvram get tailscale_enable)
 ts_dns=$(nvram get tailscale_dns)
 ts_route=$(nvram get tailscale_route)
@@ -28,11 +24,6 @@ tailscale_renum=`nvram get tailscale_renum`
 
 BUNDLED_TS_BIN="/etc/tailscaled.bin"
 
-# Hàm kiểm tra dung lượng bộ nhớ RAM còn trống chuẩn Linux
-get_free_ram_mb() {
-	df -m /tmp 2>/dev/null | awk 'NR==2 {print $4}'
-}
-
 extract_bundled_ts() {
 	if [ -f "$BUNDLED_TS_BIN" ] ; then
 		bin_path=$(dirname "$tailscaled")
@@ -40,7 +31,7 @@ extract_bundled_ts() {
 		logger -t "【Tailscale】" "Found bundled tailscaled in firmware, copying to RAM..."
 		cp "$BUNDLED_TS_BIN" "$tailscaled"
 		chmod +x "$tailscaled"
-		if [ "$($tailscaled -h 2>&1 | wc -l)" -gt 3 ] ; then
+		if [[ "$($tailscaled -h 2>&1 | wc -l)" -gt 3 ]] ; then
 			logger -t "【Tailscale】" "Bundled tailscaled extracted successfully"
 			return 0
 		else
@@ -72,6 +63,7 @@ if [ "$1" = "x" ] ; then
 			echo $I > $relock
 			sleep 60
 			[ "$(nvram get tailscale_renum)" = "0" ] && break
+   			#[ "$(nvram get tailscale_enable)" = "0" ] && exit 0
 			[ $I -lt 0 ] && break
 		done
 		nvram set tailscale_renum="1"
@@ -84,13 +76,13 @@ start_ts
 get_tag() {
 	curltest=`which curl`
 	logger -t "【Tailscale】" "Fetching latest version..."
-	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-		tag="$( wget --no-check-certificate -T 5 -t 3 --user-agent "$user_agent" --output-document=- https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
-		[ -z "$tag" ] && tag="$( wget --no-check-certificate -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=- https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
-	else
-		tag="$( curl -k --connect-timeout 3 --user-agent "$user_agent" https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
-		[ -z "$tag" ] && tag="$( curl -Lk --connect-timeout 3 --user-agent "$user_agent" -s https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
-	fi
+    	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
+      		tag="$( wget --no-check-certificate -T 5 -t 3 --user-agent "$user_agent" --output-document=-  https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
+	 	[ -z "$tag" ] && tag="$( wget --no-check-certificate -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=-  https://api.github.com/repos/lmq8267/tailscale/releases/latest  2>&1 | grep 'tag_name' | cut -d\" -f4 )"
+    	else
+      		tag="$( curl -k --connect-timeout 3 --user-agent "$user_agent"  https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
+       	[ -z "$tag" ] && tag="$( curl -Lk --connect-timeout 3 --user-agent "$user_agent" -s  https://api.github.com/repos/lmq8267/tailscale/releases/latest  2>&1 | grep 'tag_name' | cut -d\" -f4 )"
+        fi
 	[ -z "$tag" ] && logger -t "【Tailscale】" "Could not fetch latest version"
 	nvram set tailscale_ver_n=$tag
 	if [ -f "$tailscaled" ] ; then
@@ -109,15 +101,15 @@ dowload_ts() {
 	bin_path=$(dirname "$tailscaled")
 	[ ! -d "$bin_path" ] && mkdir -p "$bin_path"
 	logger -t "【Tailscale】" "Starting download https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full to $tailscaled"
-	
-	tailscaled_size0="$(get_free_ram_mb)"
-	logger -t "【Tailscale】" "Free space at RAM (/tmp): ${tailscaled_size0}M"
-	
-	curl -Lko "$tailscaled" --connect-timeout 10 --retry 2 --max-time 90 "https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full" || wget --no-check-certificate -T 15 -t 2 -O "$tailscaled" "https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full"
-	
+	length=$(wget --no-check-certificate -T 10 -t 3 "https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full" -O /dev/null --spider --server-response 2>&1 | grep "[Cc]ontent-[Ll]ength" | grep -Eo '[0-9]+' | tail -n 1)
+ 	length=`expr $length + 512000`
+	length=`expr $length / 1048576`
+ 	tailscaled_size0="$(check_disk_size $bin_path)"
+ 	[ ! -z "$length" ] && logger -t "【Tailscale】" "Program size ${length}M, free space at program path ${tailscaled_size0}M "
+        curl -Lko "$tailscaled" --connect-timeout 10 --retry 2 --max-time 90 "https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full" || wget --no-check-certificate -T 15 -t 2 -O "$tailscaled" "https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full"
 	if [ "$?" = 0 ] ; then
 		chmod +x $tailscaled
-		if [ "$($tailscaled -h 2>&1 | wc -l)" -gt 3 ] ; then
+  		if [[ "$($tailscaled -h 2>&1 | wc -l)" -gt 3 ]] ; then
 			logger -t "【Tailscale】" "$tailscaled downloaded successfully"
 			ts_ver=$($tailscaled -version | sed -n 1p | awk -F '-' '{print $1}')
 			if [ -z "$ts_ver" ] ; then
@@ -125,20 +117,20 @@ dowload_ts() {
 			else
 				nvram set tailscale_ver=$ts_ver
 			fi
-		else
-			logger -t "【Tailscale】" "Download incomplete or corrupt"
-			rm -f $tailscaled
-		fi
+       		else
+	   		logger -t "【Tailscale】" "Download incomplete, please manually download https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full and upload to $tailscaled"
+	   		rm -f $tailscaled
+	  	fi
 	else
-		logger -t "【Tailscale】" "Download failed"
-	fi
+		logger -t "【Tailscale】" "Download failed, please manually download https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full and upload to $tailscaled"
+   	fi
 }
 
 update_ts() {
 	get_tag
 	[ -z "$tag" ] && logger -t "【Tailscale】" "Could not fetch latest version" && exit 1
-	if [ -n "$tag" ] && [ -n "$ts_ver" ] ; then
-		if [ "$tag" != "$ts_ver" ] ; then
+	if [ ! -z "$tag" ] && [ ! -z "$ts_ver" ] ; then
+		if [ "$tag"x != "$ts_ver"x ] ; then
 			logger -t "【Tailscale】" "Current version ${ts_ver}, latest version ${tag}"
 			dowload_ts $tag
 		else
@@ -151,8 +143,8 @@ update_ts() {
 get_info() {
 	nvram set tailscale_info=""
 	$tailscale status >/tmp/tailscale.status 2>&1
-	if [ -z "$(grep 'Logged' /tmp/tailscale.status | grep 'out')" ] ; then
-		cat /tmp/tailscale.status >>/tmp/tailscale.log 
+	if [ -z "$(cat /tmp/tailscale.status | grep  'Logged' | grep  'out')" ] ; then
+		echo "$(cat /tmp/tailscale.status)" >>/tmp/tailscale.log 
 		ts_IP="$($tailscale ip | sed -n 1p)"
 		if echo "$ts_IP" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
 			ts_info="$($tailscale whois $ts_IP)"
@@ -161,42 +153,42 @@ get_info() {
 			user_name=$(echo "$ts_info" | awk -F 'Name: ' 'NR==6 {print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//')
 			user_id=$(echo "$ts_info" | awk -F 'ID: ' 'NR==7 {print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//')
 			
-			[ -n "$user_name" ] && adminuser="Bound account: $user_name "
-			[ -n "$ts_IP" ] && adminip=" Device IP: $ts_IP "
-			[ -n "$device_id" ] && adminid=" Device ID: $device_id "
+			[ ! -z "$user_name" ] && adminuser="Bound account: $user_name "
+			[ ! -z "$ts_IP" ] && adminip=" Device IP: $ts_IP "
+			[ ! -z "$device_id" ] && adminid=" Device ID: $device_id "
 			logger -t "【Tailscale】" "Device Name: $device_name  Device IP: $ts_IP  Device ID: $device_id"
 			logger -t "【Tailscale】" "Bound Account: $user_name  Account ID: $user_id"
 			nvram set tailscale_info="${adminuser}${adminip}${adminid}"
 		fi
 	fi
-	rm -f /tmp/tailscale.status
 }
 
 get_login() {
 	$tailscale status >/tmp/tailscale.status 2>&1
 	nvram set tailscale_login=""
-	if [ -n "$(grep 'Logged' /tmp/tailscale.status | grep 'out')" ] ; then
+	if [ ! -z "$(cat /tmp/tailscale.status | grep  'Logged' | grep  'out')" ] ; then
 		logger -t "【Tailscale】" "First install or key file empty, fetching device login URL..."
 		login_url=$(cat /tmp/tailscale.status | awk -F 'Log in at: ' '{print $2}')
 		logger -t "【Tailscale】" "Device login URL: $login_url"
 		nvram set tailscale_login="$login_url"
-		logger -t "【Tailscale】" "After binding, do not reboot immediately to avoid losing key state"
-		[ -z "$login_url" ] && logger -t "【Tailscale】" "Could not get device login URL, run '$tailscale login' manually via SSH"
+		logger -t "【Tailscale】" "After binding the device, please do not reboot immediately, to avoid losing the key file /etc/storage/tailscale/lib/tailscaled.state on restart"
+		[ -z "$login_url" ] && logger -t "【Tailscale】" "Could not get device login URL, please open SSH and manually run $tailscale login to get the login URL"
 	else
 		get_info
 	fi
-	rm -f /tmp/tailscale.status
+
 }
 
 ts_keep() {
 	logger -t "【Tailscale】" "Watchdog started"
 	if [ -s /tmp/script/_opt_script_check ]; then
-		sed -Ei '/【Tailscaled】|^$/d' /tmp/script/_opt_script_check
-		cat >> "/tmp/script/_opt_script_check" <<-OSC
-		[ -z "\`pidof tailscaled\`" ] && logger -t "Process Watchdog" "tailscaled process dropped" && eval "$scriptfilepath start &" && sed -Ei '/【Tailscaled】|^$/d' /tmp/script/_opt_script_check #【Tailscaled】
-		[ -z "\$(iptables -L -n -v | grep 'tailscale0')" ] && logger -t "Process Watchdog" "tailscaled firewall rule invalid" && eval "$scriptfilepath start &" && sed -Ei '/【Tailscaled】|^$/d' /tmp/script/_opt_script_check #【Tailscaled】
-		[ -s /tmp/tailscale.log ] && [ "\$(stat -c %s /tmp/tailscale.log)" -gt 307200 ] && echo "" > /tmp/tailscale.log & #【Tailscaled】
-		OSC
+	sed -Ei '/【Tailscaled】|^$/d' /tmp/script/_opt_script_check
+	cat >> "/tmp/script/_opt_script_check" <<-OSC
+	[ -z "\`pidof tailscaled\`" ] && logger -t "Process Watchdog" "tailscaled process dropped" && eval "$scriptfilepath start &" && sed -Ei '/【Tailscaled】|^$/d' /tmp/script/_opt_script_check #【Tailscaled】
+	[ -z "\$(iptables -L -n -v | grep 'tailscale0')" ] && logger -t "Process Watchdog" "tailscaled firewall rule invalid" && eval "$scriptfilepath start &" && sed -Ei '/【Tailscaled】|^$/d' /tmp/script/_opt_script_check #【Tailscaled】
+	[ -s /tmp/tailscale.log ] && [ "\$(stat -c %s /tmp/tailscale.log)" -gt 681984 ] && echo "" > /tmp/tailscale.log & #【Tailscaled】
+	OSC
+
 	fi
 	get_login
 }
@@ -217,15 +209,15 @@ start_ts() {
 	sed -Ei '/【Tailscaled】|^$/d' /tmp/script/_opt_script_check
 	[ ! -f "$tailscaled" ] && extract_bundled_ts
 	get_tag
-	if [ -f "$tailscaled" ] ; then
+ 	if [ -f "$tailscaled" ] ; then
 		[ ! -x "$tailscaled" ] && chmod +x $tailscaled
-		[ "$($tailscaled -h 2>&1 | wc -l)" -lt 2 ] && logger -t "【Tailscale】" "Program ${tailscaled} is incomplete!" && rm -rf $tailscaled
-	fi
-	if [ ! -f "$tailscaled" ] ; then
+  		[[ "$($tailscaled -h 2>&1 | wc -l)" -lt 2 ]] && logger -t "【Tailscale】" "Program ${tailscaled} is incomplete!" && rm -rf $tailscaled
+  	fi
+ 	if [ ! -f "$tailscaled" ] ; then
 		logger -t "【Tailscale】" "Main program ${tailscaled} not found, starting download..."
-		[ -z "$tag" ] && tag="1.78.1"
-		dowload_ts $tag
-	fi
+  		[ -z "$tag" ] && tag="1.78.1"
+  		dowload_ts $tag
+  	fi
 	kill_ts
 	[ ! -x "$tailscaled" ] && chmod +x $tailscaled
 	path=$(dirname "$tailscaled")
@@ -233,33 +225,27 @@ start_ts() {
 	if [ ! -L "$tailscale" ] || [ "$(ls -l $tailscale | awk '{print $NF}')" != "$tailscaled" ] ; then
 		ln -sf "$tailscaled" "$tailscale"
 	fi
-
-	$tailscaled --cleanup >/tmp/tailscale.log 2>&1
+	#[ $(($($tailscaled -h | wc -l))) -lt 3 ] && logger -t "【Tailscale】" "Program ${tailscaled} is incomplete, cannot run!" 
+	$tailscaled --cleanup >/tmp/tailscale.log
 	tdCMD="$tailscaled --state=/etc/storage/tailscale/lib/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock"
 	logger -t "【Tailscale】" "Running main program $tdCMD"
-	
-	# Ép Go Runtime giải phóng bộ nhớ
-	export GOMEMLIMIT=48MiB
-	export GOGC=25
-	
 	eval "$tdCMD >>/tmp/tailscale.log 2>&1" &
 	sleep 4
-	
-	pid_td=$(pidof tailscaled)
-	if [ -n "$pid_td" ] ; then
-		mem=$(grep -w VmRSS /proc/$pid_td/status 2>/dev/null | awk '{printf "%.1f MB", $2/1024}')
-		logger -t "【Tailscale】" "Main program running successfully! Memory usage: ${mem:-unknown}"
-		ts_restart o
-		iptables -C INPUT -i tailscale0 -j ACCEPT 2>/dev/null
+	if [ ! -z "`pidof tailscaled`" ] ; then
+ 		mem=$(cat /proc/$(pidof tailscaled)/status | grep -w VmRSS | awk '{printf "%.1f MB", $2/1024}')
+   		tdcpu="$(top -b -n1 | grep -E "$(pidof tailscaled)" 2>/dev/null| grep -v grep | awk '{for (i=1;i<=NF;i++) {if ($i ~ /tailscaled/) break; else cpu=i}} END {print $cpu}')"
+		logger -t "【Tailscale】" "Main program running successfully!"
+  		logger -t "【Tailscale】" "Main program: memory usage ${mem}  CPU usage ${tdcpu}%"
+  		ts_restart o
+		iptables -C INPUT -i tailscale0 -j ACCEPT
 		if [ "$?" != 0 ] ; then
 			iptables -I INPUT -i tailscale0 -j ACCEPT
 		fi
 	else
-		logger -t "【Tailscale】" "Failed to run main program, auto-retry in 10 seconds"
-		sleep 10
+		logger -t "【Tailscale】" "Failed to run main program, check if ${tailscaled} downloaded completely, auto-retry in 10 seconds"
+  		sleep 10
 		ts_restart x
 	fi
-
 	CMD=""
 	if [ "$ts_enable" = "1" ] ; then
 		CMD="up"
@@ -279,11 +265,12 @@ start_ts() {
 		[ -z "$ts_key" ] || ts_key="$(echo $ts_key | tr -d ' ')"
 		[ -z "$ts_key" ] || CMD="${CMD} --auth-key=${ts_key}"
 		[ -z "$t2_CMD" ] || CMD="${CMD} ${t2_CMD}"
-		[ "$ts_reset" = "1" ] && CMD="${CMD} --reset"
+  		[ "$ts_reset" = "1" ] && CMD="${CMD} --reset"
 		CMD="${tailscale} ${CMD}"
 	fi
 	if [ "$ts_enable" = "2" ] ; then
-		if [ -n "$t_CMD" ] ; then
+		if [ ! -z "$t_CMD" ] ; then
+			
 			CMD="${tailscale} ${t_CMD}"
 		else
 			logger -t "【Tailscale】" "Custom startup parameters empty, using default parameter: up"
@@ -291,30 +278,44 @@ start_ts() {
 			nvram set tailscale_cmd="up"
 		fi
 	fi
-	
 	logger -t "【Tailscale】" "Running sub-process ${CMD}"
 	eval "$CMD >>/tmp/tailscale.log 2>&1" &
-	sleep 4
-	
+	sleep 5
+	if [ ! -z "`pidof tailscale`" ] ; then
+ 		mem=$(cat /proc/$(pidof tailscale)/status | grep -w VmRSS | awk '{printf "%.1f MB", $2/1024}')
+   		tscpu="$(top -b -n1 | grep -E "$(pidof tailscale)" 2>/dev/null| grep -v grep | awk '{for (i=1;i<=NF;i++) {if ($i ~ /tailscale/) break; else cpu=i}} END {print $cpu}')"
+		logger -t "【Tailscale】" "Sub-process running successfully!"
+  		logger -t "【Tailscale】" "Sub-process: memory usage ${mem}  CPU usage ${tscpu}%"
+    		ts_restart o
+	else
+		logger -t "【Tailscale】" "Sub-process failed to run, check if ${VNTCLI} downloaded completely, auto-retry in 10 seconds"
+  		sleep 10
+  		ts_restart x
+	fi
 	ts_keep
 	exit 0
 }
-
 kill_ts() {
-	rm -f /tmp/tailscale.log
-	if [ -n "$(pidof tailscaled)" ]; then
+	tsd_process=$(pidof tailscaled)
+	ts_process=$(pidof tailscaled)
+	rm -rf /tmp/tailscale.log
+	if [ ! -z "$ts_process" ] || [ ! -z "$tsd_process" ]; then
 		logger -t "【Tailscale】" "Process running, terminating..."
-		[ -f "$tailscaled" ] && $tailscaled --cleanup >/dev/null 2>&1
-		killall -9 tailscaled >/dev/null 2>&1
-		killall -9 tailscale >/dev/null 2>&1
+		[ -f "$tailscaled" ] && $tailscaled --cleanup >/tmp/tailscale.log
+		killall tailscaled >/dev/null 2>&1
+		killall tailscale >/dev/null 2>&1
 	fi
 }
-
 stop_ts() {
 	logger -t "【Tailscale】" "Stopping tailscale..."
 	sed -Ei '/【Tailscaled】|^$/d' /tmp/script/_opt_script_check
+	scriptname=$(basename $0)
 	kill_ts
-	[ -z "$(pidof tailscaled)" ] && logger -t "【Tailscale】" "tailscale stopped successfully!"
+	[ -z "`pidof tailscaled`" ] && logger -t "【Tailscale】" "tailscale stopped successfully!"
+ 	if [ ! -z "$scriptname" ] ; then
+		eval $(ps -w | grep "$scriptname" | grep -v $$ | grep -v grep | awk '{print "kill "$1";";}')
+		eval $(ps -w | grep "$scriptname" | grep -v $$ | grep -v grep | awk '{print "kill -9 "$1";";}')
+	fi
 }
 
 case $1 in
@@ -333,5 +334,6 @@ update)
 	;;
 *)
 	echo "check"
+	#exit 0
 	;;
 esac
