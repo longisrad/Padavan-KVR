@@ -15,62 +15,10 @@
 <script type="text/javascript" src="/help.js"></script>
 
 <script>
-var $j = jQuery.noConflict();
-
 function initial(){
 	show_banner(2);
-	show_menu(5, 35, 0); // Chỉ số Menu Sing-box
+	show_menu(5, 30, 0);
 	show_footer();
-	check_singbox_status();
-}
-
-function update_singbox_link(){
-	var dashUrl = document.getElementById('sb_dash_url_raw').value;
-	var info = document.getElementById('sb_info_raw').value;
-	
-	// Nếu chưa có URL trong NVRAM, tự động tạo theo IP Router và Cổng Dashboard
-	if (!dashUrl || dashUrl.length == 0) {
-		var isRunning = (typeof(singbox_status) === 'function' && singbox_status() > 0);
-		var isEnabled = document.form.singbox_enable && document.form.singbox_enable.value == "1";
-		if (isRunning || isEnabled) {
-			var port = "<% nvram_get_x("", "singbox_dash_port"); %>";
-			if (!port || port == "0" || port == "") port = "9090";
-			dashUrl = "http://" + window.location.hostname + ":" + port + "/ui/";
-		}
-	}
-
-	if (dashUrl && dashUrl.length > 0) {
-		document.getElementById('sb_dash_link').href = dashUrl;
-		document.getElementById('sb_dash_link').innerHTML = dashUrl;
-		document.getElementById('sb_link_box').style.display = '';
-	} else {
-		document.getElementById('sb_link_box').style.display = 'none';
-	}
-
-	if (info && info.length > 0) {
-		document.getElementById('sb_account_text').innerHTML = info;
-		document.getElementById('sb_account_box').style.display = '';
-	} else {
-		document.getElementById('sb_account_box').style.display = 'none';
-	}
-}
-
-function check_singbox_status(){
-	$j.get('/update_action.asp', {output: 'singbox_status'}, function(data){
-		eval(data);
-		var status_str = "";
-		if (typeof(singbox_status) === 'function' && singbox_status() > 0) {
-			status_str = '<span class="label label-success">Running</span>';
-		} else {
-			status_str = '<span class="label label-important">Stopped</span>';
-		}
-		$j("#singbox_status_text").html(status_str);
-		
-		// Cập nhật lại khung Link mỗi khi check trạng thái (giống Tailscale)
-		update_singbox_link();
-		
-		setTimeout(check_singbox_status, 5000);
-	});
 }
 
 function applyRule(){
@@ -82,8 +30,9 @@ function applyRule(){
 }
 
 function clearLog(){
+	var $j = jQuery.noConflict();
 	$j.post('/apply.cgi', { 'action_mode': ' ClearSingboxLog ' })
-		.always(function(){ setTimeout(function(){ location.reload(); }, 1500); });
+		.always(function(){ setTimeout(function(){ location.reload(); }, 2000); });
 }
 </script>
 </head>
@@ -123,38 +72,12 @@ function clearLog(){
 
 	<div class="alert alert-info" style="margin:10px;">
 		A universal proxy platform supporting VLESS, VMess, Trojan, Shadowsocks, Hysteria2 and more.
-		<div>Project page: <a href="https://github.com/SagerNet/sing-box" target="_blank">https://github.com/SagerNet/sing-box</a></div>
+		<div>Project page: <a href="https://github.com/SagerNet/sing-box" target="blank">https://github.com/SagerNet/sing-box</a></div>
 		<div style="color:#888;">Binary is downloaded from this firmware's own GitHub Release (built from source, not bundled in squashfs).</div>
 	</div>
 
-	<!-- Khung hiển thị Link Dashboard / Web UI nổi bật (Chuẩn cơ chế Tailscale) -->
-	<div id="sb_link_box" class="alert alert-info" style="margin: 10px; display:none;">
-		<b>sing-box Web UI / Dashboard Link:</b><br>
-		Click the link below to open the sing-box management interface:
-		<div style="margin-top:8px; padding:8px; background:#fff; border-radius:4px; word-break:break-all;">
-			<a id="sb_dash_link" href="#" target="_blank" style="font-size:14px; font-weight:bold;"></a>
-		</div>
-		<span style="color:#888;">Ensure Clash API / external controller UI is enabled in your config.json.</span>
-	</div>
-	<div id="sb_account_box" class="alert alert-success" style="margin: 10px; display:none;">
-		<b>Status Info:</b> &nbsp; <span id="sb_account_text"></span>
-	</div>
-	
-	<!-- Đọc giá trị ngầm từ NVRAM tương tự Tailscale -->
-	<input type="hidden" id="sb_dash_url_raw" value="<% nvram_get_x("", "singbox_dash_url"); %>">
-	<input type="hidden" id="sb_info_raw" value="<% nvram_get_x("", "singbox_info"); %>">
-	<script>
-	(function(){
-		update_singbox_link();
-	})();
-	</script>
-
 	<table width="100%" cellpadding="4" cellspacing="0" class="table">
 	<tr><th colspan="2" style="background-color:#756c78;">Control</th></tr>
-	<tr>
-		<th width="30%">Service Status</th>
-		<td><div id="singbox_status_text"><span class="label">Checking...</span></div></td>
-	</tr>
 	<tr>
 		<th width="30%">Enable sing-box</th>
 		<td>
@@ -177,7 +100,7 @@ function clearLog(){
 	<tr>
 		<td>
 			<span style="color:#888;">Paste your full sing-box config.json here (inbounds/outbounds/route/dns). Invalid JSON will fail to start - check the log tab below after Apply.</span><br>
-			<textarea name="scripts.singbox.conf" class="input" style="width:100%; height:400px; font-family:'Courier New',monospace; font-size:12px;"><% nvram_dump("scripts.singbox.conf",""); %></textarea>
+			<textarea name="singbox_config" class="input" style="width:100%; height:400px; font-family:'Courier New',monospace; font-size:12px;"><% nvram_dump_x("scripts.singbox.conf",""); %></textarea>
 		</td>
 	</tr>
 	</table>
