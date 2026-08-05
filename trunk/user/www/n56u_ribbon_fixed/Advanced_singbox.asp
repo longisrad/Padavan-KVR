@@ -76,6 +76,16 @@ function clearLog(){
 		<div style="color:#888;">Binary is downloaded from this firmware's own GitHub Release (built from source, not bundled in squashfs).</div>
 	</div>
 
+	<div style="margin:10px; text-align:center;">
+		<a class="btn btn-success" style="width:260px; font-size:15px;" href="javascript:void(0);" onclick="openDashboard();">Open sing-box Dashboard</a>
+	</div>
+	<script>
+	function openDashboard(){
+		var ip = "<% nvram_get_x("","lan_ipaddr"); %>";
+		window.open("http://" + ip + ":9090/ui", "_blank");
+	}
+	</script>
+
 	<table width="100%" cellpadding="4" cellspacing="0" class="table">
 	<tr><th colspan="2" style="background-color:#756c78;">Control</th></tr>
 	<tr>
@@ -96,14 +106,23 @@ function clearLog(){
 	</table>
 
 	<table width="100%" cellpadding="4" cellspacing="0" class="table">
-	<tr><th colspan="2" style="background-color:#756c78;">Configuration (raw JSON)</th></tr>
-	<tr>
+	<tr><th colspan="2" style="background-color:#756c78;">
+		Configuration (raw JSON)
+		<input class="btn btn-mini" style="float:right;" type="button" value="Show/Hide" onclick="toggleConfig();" />
+	</th></tr>
+	<tr id="singbox_config_row" style="display:none;">
 		<td>
 			<span style="color:#888;">Paste your full sing-box config.json here (inbounds/outbounds/route/dns). Invalid JSON will fail to start - check the log tab below after Apply.</span><br>
 			<textarea name="singbox_config" class="input" style="width:100%; height:400px; font-family:'Courier New',monospace; font-size:12px;"><% nvram_dump_x("scripts.singbox.conf",""); %></textarea>
 		</td>
 	</tr>
 	</table>
+	<script>
+	function toggleConfig(){
+		var row = document.getElementById('singbox_config_row');
+		row.style.display = (row.style.display === 'none') ? '' : 'none';
+	}
+	</script>
 
 	<div style="margin:10px;">
 		<center><input class="btn btn-primary" style="width:219px" type="button" value="<#CTL_apply#>" onclick="applyRule()" /></center>
