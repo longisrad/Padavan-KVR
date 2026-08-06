@@ -49,12 +49,39 @@ function showTab(curHash) {
 		if (curHash == ('#' + arrHashes[i])) {
 			$j('#tab_singbox_' + arrHashes[i]).parents('li').addClass('active');
 			$j('#wnd_singbox_' + arrHashes[i]).show();
+			if (arrHashes[i] === 'log') {
+				refreshLog();
+			}
 		} else {
 			$j('#wnd_singbox_' + arrHashes[i]).hide();
 			$j('#tab_singbox_' + arrHashes[i]).parents('li').removeClass('active');
 		}
 	}
 	window.location.hash = curHash;
+}
+
+/* Nạp và cuộn log tự động */
+function refreshLog(){
+	$j.get('/singbox.log?_t=' + new Date().getTime(), function(data){
+		if(data && data.trim() !== "") {
+			$j('#textarea').val(data);
+		}
+		scrollLogToBottom();
+	}).fail(function(){
+		$j.get('/sing-box.log?_t=' + new Date().getTime(), function(data2){
+			if(data2 && data2.trim() !== "") {
+				$j('#textarea').val(data2);
+			}
+			scrollLogToBottom();
+		});
+	});
+}
+
+function scrollLogToBottom(){
+	var textarea = document.getElementById('textarea');
+	if (textarea) {
+		textarea.scrollTop = textarea.scrollHeight;
+	}
 }
 
 /* Quản lý danh sách Sub (Thêm / Sửa / Xóa) */
@@ -190,9 +217,17 @@ function openDashboard(){
 	window.open("http://" + ip + ":9090/ui", "_blank");
 }
 
+/* Xóa Log chuẩn theo mẫu Tailscale */
 function clearLog(){
-	$j.post('/apply.cgi', { 'action_mode': ' ClearSingboxLog ' })
-		.always(function(){ setTimeout(function(){ location.reload(); }, 2000); });
+	var $j = jQuery.noConflict();
+	$j.post('/apply.cgi', {
+		'action_mode': ' ClearSingboxLog ',
+		'next_host': 'Advanced_singbox.asp#log'
+	}).always(function() {
+		setTimeout(function() {
+			location.reload(); 
+		}, 2000);
+	});
 }
 </script>
 </head>
@@ -380,12 +415,13 @@ function clearLog(){
 
 	</div>
 
-	<!-- TAB RUN LOG -->
+	<!-- TAB RUN LOG (ĐÃ SỬA ĐỒNG BỘ ĐỌC CẢ DẠNG KHÔNG DẤU VÀ CÓ DẤU GẠCH) -->
 	<div id="wnd_singbox_log" style="display:none;">
-	<div class="alert alert-info" style="margin:10px;">Live log output from sing-box.
+	<div class="alert alert-info" style="margin:10px; overflow:hidden;">
+		Live log output from sing-box.
 		<input class="btn btn-danger" style="float:right;" type="button" value="Clear Log" onclick="clearLog()" />
 	</div>
-	<textarea rows="21" class="span12" style="height:377px; font-family:'Courier New', Courier, mono; font-size:13px;" readonly="readonly" wrap="off" id="textarea"><% nvram_dump("sing-box.log",""); %></textarea>
+	<textarea rows="21" class="span12" style="height:377px; font-family:'Courier New', Courier, mono; font-size:13px;" readonly="readonly" wrap="off" id="textarea"><% nvram_dump("singbox.log",""); %><% nvram_dump("sing-box.log",""); %></textarea>
 	</div>
 
 	</div>
