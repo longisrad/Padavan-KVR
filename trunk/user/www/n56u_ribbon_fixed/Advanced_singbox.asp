@@ -11,11 +11,22 @@
 <script type="text/javascript" src="/bootstrap/js/engage.itoggle.min.js"></script>
 <script type="text/javascript" src="/state.js"></script>
 <script type="text/javascript" src="/general.js"></script>
+<script type="text/javascript" src="/itoggle.js"></script>
 <script type="text/javascript" src="/popup.js"></script>
 <script type="text/javascript" src="/help.js"></script>
 
 <script>
 var $j = jQuery.noConflict();
+
+/* Khởi tạo Nút gạt Toggle theo đúng chuẩn Padavan / Tailscale */
+$j(document).ready(function() {
+	init_itoggle('singbox_enable');
+	init_itoggle('singbox_bypass_vn');
+	init_itoggle('singbox_adblock');
+});
+
+var subList = [];
+var editingIndex = -1;
 
 function initial(){
 	show_banner(2);
@@ -26,6 +37,7 @@ function initial(){
 		showTab(newHash);
 		return false;
 	});
+	loadSubList();
 }
 
 var arrHashes = ["cfg","log"];
@@ -45,49 +57,95 @@ function showTab(curHash) {
 	window.location.hash = curHash;
 }
 
-function applyRule(){
-	showLoading();
-	document.form.action_mode.value = " Apply ";
-	document.form.action_script.value = "restart_singbox";
-	document.form.current_page.value = "/Advanced_singbox.asp";
-	document.form.submit();
-}
-
-function toggleConfig(){
-	var row = document.getElementById('singbox_config_row');
-	row.style.display = (row.style.display === 'none') ? '' : 'none';
-}
-
-function loadFromUrl(){
-	var url = document.getElementById('cfg_url').value.trim();
-	var status = document.getElementById('cfg_url_status');
-	if (!url) { status.innerHTML = 'Enter a URL first'; return; }
-	status.innerHTML = 'Loading...';
-	$j.ajax({
-		url: url,
-		dataType: 'text',
-		timeout: 10000,
-		success: function(data){
-			try { JSON.parse(data); } catch(e) {
-				status.innerHTML = '<span style="color:#d9534f;">Fetched, but not valid JSON - review before Apply</span>';
-				document.getElementById('singbox_config').value = data;
-				return;
-			}
-			document.getElementById('singbox_config').value = data;
-			status.innerHTML = '<span style="color:#5cb85c;">Loaded OK - review then click Apply</span>';
-		},
-		error: function(){
-			status.innerHTML = '<span style="color:#d9534f;">Failed to fetch (CORS or network) - paste manually instead</span>';
+/* Quản lý danh sách Sub (Thêm / Sửa / Xóa) */
+function loadSubList(){
+	var raw = $j('#singbox_sub_list').val();
+	if (raw && raw.trim() !== "") {
+		try { subList = JSON.parse(raw); } catch(e) { subList = []; }
+	}
+	if (subList.length === 0) {
+		var oldName = "<% nvram_get_x("","singbox_sub_name"); %>";
+		var oldUrl = "<% nvram_get_x("","singbox_sub_url"); %>";
+		if (oldUrl && oldUrl.trim() !== "") {
+			subList.push({ name: oldName || "Gói Mặc Định", url: oldUrl });
+			saveSubList();
 		}
-	});
+	}
+	renderSubTable();
 }
 
-/* Nút kiểm tra Link Subscription hợp lệ */
+function saveSubList(){
+	$j('#singbox_sub_list').val(JSON.stringify(subList));
+}
+
+function renderSubTable(){
+	var tbody = $j('#sub_list_tbody');
+	tbody.empty();
+	if (subList.length === 0) {
+		tbody.append('<tr><td colspan="3" style="text-align:center; color:#888;">Chưa có Thư mục / Link Sub nào. Hãy nhập thông tin bên trên và nhấn "Thêm Thư mục".</td></tr>');
+		return;
+	}
+	for (var i = 0; i < subList.length; i++) {
+		var item = subList[i];
+		var row = '<tr>' +
+			'<td width="30%"><b>' + escapeHtml(item.name) + '</b></td>' +
+			'<td style="word-break:break-all; font-size:12px; color:#aaa;">' + escapeHtml(item.url) + '</td>' +
+			'<td width="20%" style="text-align:center;">' +
+				'<button type="button" class="btn btn-mini btn-warning" onclick="editSub(' + i + ')">✏️ Sửa</button> ' +
+				'<button type="button" class="btn btn-mini btn-danger" onclick="deleteSub(' + i + ')">🗑️ Xóa</button>' +
+			'</td>' +
+		'</tr>';
+		tbody.append(row);
+	}
+}
+
+function addOrUpdateSub(){
+	var name = $j('#input_sub_name').val().trim();
+	var url = $j('#input_sub_url').val().trim();
+	if (!name) { alert("Vui lòng nhập Tên Nhóm / Thư mục!"); return; }
+	if (!url) { alert("Vui lòng nhập Link Subscription!"); return; }
+
+	if (editingIndex >= 0) {
+		subList[editingIndex] = { name: name, url: url };
+		editingIndex = -1;
+		$j('#btn_add_sub').val("➕ Thêm Thư mục").removeClass("btn-primary").addClass("btn-success");
+	} else {
+		subList.push({ name: name, url: url });
+	}
+
+	saveSubList();
+	renderSubTable();
+	$j('#input_sub_name').val('');
+	$j('#input_sub_url').val('');
+	$j('#sub_url_status').html('');
+}
+
+function editSub(index){
+	editingIndex = index;
+	$j('#input_sub_name').val(subList[index].name);
+	$j('#input_sub_url').val(subList[index].url);
+	$j('#btn_add_sub').val("💾 Cập nhật Thư mục").removeClass("btn-success").addClass("btn-primary");
+}
+
+function deleteSub(index){
+	if (confirm("Bạn có chắc chắn muốn xóa Thư mục này khỏi danh sách?")) {
+		subList.splice(index, 1);
+		if (editingIndex === index) {
+			editingIndex = -1;
+			$j('#input_sub_name').val('');
+			$j('#input_sub_url').val('');
+			$j('#btn_add_sub').val("➕ Thêm Thư mục").removeClass("btn-primary").addClass("btn-success");
+		}
+		saveSubList();
+		renderSubTable();
+	}
+}
+
 function checkSubUrl(){
-	var url = $j('#singbox_sub_url').val().trim();
+	var url = $j('#input_sub_url').val().trim();
 	var status = $j('#sub_url_status');
 	if(!url){ 
-		status.html('<span style="color:#d9534f;">Vui lòng nhập URL trước!</span>'); 
+		status.html('<span style="color:#d9534f;">Vui lòng nhập Link Subscription trước!</span>'); 
 		return; 
 	}
 	status.html('<span style="color:#f0ad4e;">Đang kiểm tra kết nối...</span>');
@@ -100,7 +158,7 @@ function checkSubUrl(){
 			if(size > 100){
 				status.html('<span style="color:#5cb85c;">✅ Link hợp lệ! (HTTP 200 - Dung lượng: ' + Math.round(size/1024) + ' KB)</span>');
 			} else {
-				status.html('<span style="color:#d9534f;">❌ Dữ liệu trả về quá nhỏ hoặc rỗng</span>');
+				status.html('<span style="color:#d9534f;">❌ Dữ liệu phản hồi quá nhỏ hoặc rỗng</span>');
 			}
 		},
 		error: function(xhr){
@@ -108,6 +166,23 @@ function checkSubUrl(){
 			status.html('<span style="color:#d9534f;">❌ Kết nối thất bại (Mã lỗi: ' + code + ')</span>');
 		}
 	});
+}
+
+function escapeHtml(text){
+	return $j('<div/>').text(text).html();
+}
+
+function applyRule(){
+	showLoading();
+	document.form.action_mode.value = " Apply ";
+	document.form.action_script.value = "restart_singbox";
+	document.form.current_page.value = "/Advanced_singbox.asp";
+	document.form.submit();
+}
+
+function toggleConfig(){
+	var row = document.getElementById('singbox_config_row');
+	row.style.display = (row.style.display === 'none') ? '' : 'none';
 }
 
 function openDashboard(){
@@ -140,6 +215,9 @@ function clearLog(){
 	<input type="hidden" name="action_mode" value="">
 	<input type="hidden" name="action_script" value="">
 
+	<!-- Variable ẩn lưu chuỗi JSON danh sách Sub -->
+	<input type="hidden" name="singbox_sub_list" id="singbox_sub_list" value="<% nvram_get_x("","singbox_sub_list"); %>">
+
 	<div class="container-fluid">
 	<div class="row-fluid">
 	<div class="span3">
@@ -166,7 +244,6 @@ function clearLog(){
 	<div class="alert alert-info" style="margin:10px;">
 		A universal proxy platform supporting VLESS, VMess, Trojan, Shadowsocks, Hysteria2 and more.
 		<div>Project page: <a href="https://github.com/SagerNet/sing-box" target="blank">https://github.com/SagerNet/sing-box</a></div>
-		<div style="color:#888;">Binary is downloaded from this firmware's own GitHub Release (built from source, not bundled in squashfs).</div>
 	</div>
 
 	<div style="margin:10px; text-align:center;">
@@ -179,10 +256,12 @@ function clearLog(){
 	<tr>
 		<th width="30%">Enable sing-box</th>
 		<td>
-			<select name="singbox_enable" class="input">
-				<option value="0" <% nvram_match_x("","singbox_enable","0","selected"); %>>Off</option>
-				<option value="1" <% nvram_match_x("","singbox_enable","1","selected"); %>>On</option>
-			</select>
+			<!-- Nút gạt chuẩn Padavan / Tailscale -->
+			<div class="main_itoggle">
+				<div id="singbox_enable_on_of">
+					<input type="checkbox" id="singbox_enable_fake" <% nvram_match_x("", "singbox_enable", "1", "value=1 checked"); %><% nvram_match_x("", "singbox_enable", "0", "value=0"); %> />
+				</div>
+			</div>
 		</td>
 	</tr>
 	<tr>
@@ -197,22 +276,38 @@ function clearLog(){
 	</tr>
 	</table>
 
-	<!-- BẢNG 2: QUẢN LÝ SUBSCRIPTION / LINK NODE -->
+	<!-- BẢNG 2: QUẢN LÝ SUBSCRIPTION VÀ THƯ MỤC -->
 	<table width="100%" cellpadding="4" cellspacing="0" class="table">
-	<tr><th colspan="2" style="background-color:#756c78;">Subscription & Node Management</th></tr>
+	<tr><th colspan="2" style="background-color:#756c78;">Quản lý Thư mục & Link Subscription</th></tr>
 	<tr>
-		<th width="30%">Tên Nhóm / Thư mục</th>
+		<th width="30%">Thêm / Sửa Thư mục</th>
 		<td>
-			<input type="text" name="singbox_sub_name" class="input" style="width:60%;" value="<% nvram_get_x("","singbox_sub_name"); %>" placeholder="Ví dụ: 🇻🇳 Gói VIP Viettel">
-			<span style="color:#888; display:block;">Tên này sẽ hiển thị làm Thư mục phân loại trên Dashboard.</span>
+			<div style="margin-bottom:6px;">
+				<input type="text" id="input_sub_name" class="input" style="width:40%;" placeholder="Tên Thư mục (VD: 🇻🇳 Gói VIP Viettel)">
+				<input type="text" id="input_sub_url" class="input" style="width:52%;" placeholder="Link Subscription (https://...)">
+			</div>
+			<div>
+				<input class="btn btn-info" type="button" value="🔍 Check Link" onclick="checkSubUrl();">
+				<input class="btn btn-success" id="btn_add_sub" type="button" value="➕ Thêm Thư mục" onclick="addOrUpdateSub();">
+				<span id="sub_url_status" style="margin-left:8px;"></span>
+			</div>
 		</td>
 	</tr>
 	<tr>
-		<th>Link Subscription (URL)</th>
-		<td>
-			<input type="text" id="singbox_sub_url" name="singbox_sub_url" class="input" style="width:60%;" value="<% nvram_get_x("","singbox_sub_url"); %>" placeholder="https://example.com/sub/link">
-			<input class="btn btn-info" type="button" value="🔍 Check Link" onclick="checkSubUrl();">
-			<div id="sub_url_status" style="margin-top:5px;"></div>
+		<td colspan="2">
+			<!-- Bảng hiển thị danh sách Sub đã thêm -->
+			<table class="table table-bordered table-striped" style="margin-bottom:0;">
+				<thead>
+					<tr style="background-color:#5a525d; color:#fff;">
+						<th>Tên Thư mục / Nhóm</th>
+						<th>Link Subscription</th>
+						<th style="text-align:center;">Hành động</th>
+					</tr>
+				</thead>
+				<tbody id="sub_list_tbody">
+					<!-- Các hàng dữ liệu được tự động render bằng JS -->
+				</tbody>
+			</table>
 		</td>
 	</tr>
 	</table>
@@ -223,20 +318,24 @@ function clearLog(){
 	<tr>
 		<th width="30%">Bypass IP/Tên miền VN</th>
 		<td>
-			<select name="singbox_bypass_vn" class="input">
-				<option value="0" <% nvram_match_x("","singbox_bypass_vn","0","selected"); %>>Disable (Tất cả qua VPN)</option>
-				<option value="1" <% nvram_match_x("","singbox_bypass_vn","1","selected"); %>>Enable (Cho IP/Web Việt Nam đi thẳng)</option>
-			</select>
-			<span style="color:#888; display:block;">Giúp vào trang web Việt Nam nhanh nhất và tiết kiệm dung lượng VPN.</span>
+			<!-- Nút gạt chuẩn Padavan / Tailscale -->
+			<div class="main_itoggle">
+				<div id="singbox_bypass_vn_on_of">
+					<input type="checkbox" id="singbox_bypass_vn_fake" <% nvram_match_x("", "singbox_bypass_vn", "1", "value=1 checked"); %><% nvram_match_x("", "singbox_bypass_vn", "0", "value=0"); %> />
+				</div>
+			</div>
+			<span style="color:#888; margin-left:10px; display:inline-block; vertical-align:middle;">Bật để IP/Web Việt Nam đi thẳng (không qua VPN) giúp tối ưu tốc độ.</span>
 		</td>
 	</tr>
 	<tr>
 		<th>Chặn quảng cáo (AdBlock)</th>
 		<td>
-			<select name="singbox_adblock" class="input">
-				<option value="0" <% nvram_match_x("","singbox_adblock","0","selected"); %>>Disable</option>
-				<option value="1" <% nvram_match_x("","singbox_adblock","1","selected"); %>>Enable (Chặn quảng cáo tự động)</option>
-			</select>
+			<!-- Nút gạt chuẩn Padavan / Tailscale -->
+			<div class="main_itoggle">
+				<div id="singbox_adblock_on_of">
+					<input type="checkbox" id="singbox_adblock_fake" <% nvram_match_x("", "singbox_adblock", "1", "value=1 checked"); %><% nvram_match_x("", "singbox_adblock", "0", "value=0"); %> />
+				</div>
+			</div>
 		</td>
 	</tr>
 	<tr>
@@ -269,12 +368,7 @@ function clearLog(){
 	</th></tr>
 	<tr id="singbox_config_row" style="display:none;">
 		<td>
-			<div style="margin-bottom:8px;">
-				<input type="text" id="cfg_url" class="input" placeholder="https://example.com/config.json" style="width:60%;">
-				<input class="btn btn-info" type="button" value="Load from URL" onclick="loadFromUrl();">
-				<span id="cfg_url_status" style="color:#888; margin-left:8px;"></span>
-			</div>
-			<span style="color:#888;">Paste your full sing-box config.json here (inbounds/outbounds/route/dns), or fetch it from a URL above. Invalid JSON will fail to start - check the Run Log tab after Apply.</span><br>
+			<span style="color:#888;">Paste your full sing-box config.json here (inbounds/outbounds/route/dns). Invalid JSON will fail to start - check the Run Log tab after Apply.</span><br>
 			<textarea name="singbox_config" id="singbox_config" class="input" style="width:100%; height:400px; font-family:'Courier New',monospace; font-size:12px;"><% nvram_dump_x("scripts.singbox.conf",""); %></textarea>
 		</td>
 	</tr>
