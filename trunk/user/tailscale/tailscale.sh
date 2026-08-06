@@ -77,6 +77,18 @@ fi
 start_ts
 }
 
+get_local_ver() {
+	if [ -f "$tailscaled" ] ; then
+		chmod +x $tailscaled
+		ts_ver=$($tailscaled -version | sed -n 1p | awk -F '-' '{print $1}')
+		if [ -z "$ts_ver" ] ; then
+			nvram set tailscale_ver=""
+		else
+			nvram set tailscale_ver=$ts_ver
+		fi
+	fi
+}
+
 get_tag() {
 	curltest=`which curl`
 	logger -t "【Tailscale】" "Fetching latest version..."
@@ -221,7 +233,7 @@ start_ts() {
 	logger -t "Tailscale" "Starting tailscale"
 	sed -Ei '/【Tailscaled】|^$/d' /tmp/script/_opt_script_check
 	[ ! -f "$tailscaled" ] && extract_bundled_ts
-	get_tag
+	get_local_ver
 	if [ -f "$tailscaled" ] ; then
 		[ ! -x "$tailscaled" ] && chmod +x $tailscaled
 		[ "$($tailscaled -h 2>&1 | wc -l)" -lt 2 ] && logger -t "【Tailscale】" "Program ${tailscaled} is incomplete!" && rm -rf $tailscaled
