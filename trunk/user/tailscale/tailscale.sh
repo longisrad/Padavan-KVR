@@ -42,7 +42,7 @@ extract_bundled_ts() {
 		logger -t "【Tailscale】" "Found bundled tailscaled in firmware, copying to RAM..."
 		cp "$BUNDLED_TS_BIN" "$tailscaled"
 		chmod +x "$tailscaled"
-		if "$tailscaled" version >/dev/null 2>&1 ; then
+		if "$tailscaled" -version >/dev/null 2>&1 ; then
 			logger -t "【Tailscale】" "Bundled tailscaled extracted successfully"
 			return 0
 		else
@@ -94,7 +94,7 @@ get_tag() {
 		[ -z "$tag" ] && tag="$( curl -Lk --connect-timeout 5 --user-agent "$user_agent" -s https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
 	fi
 
-	# Đảm bảo tag luôn có 'v' ở đầu
+	# Đảm bảo tag luôn có tiền tố 'v' chuẩn GitHub Release
 	[ -n "$tag" ] && [ "${tag#v}" = "$tag" ] && tag="v${tag}"
 	[ -z "$tag" ] && logger -t "【Tailscale】" "Could not fetch latest version" && tag="v1.78.1"
 	
@@ -122,10 +122,8 @@ dowload_ts() {
 	tailscaled_size0="$(get_free_ram_mb)"
 	logger -t "【Tailscale】" "Free RAM space: ${tailscaled_size0}M"
 	
-	# Thử tải từ GitHub gốc (Timeout 300 giây)
 	curl -Lko "$tailscaled" --connect-timeout 15 --retry 2 --max-time 300 "$dl_url" || wget --no-check-certificate -T 20 -t 2 -O "$tailscaled" "$dl_url"
 	
-	# Nếu lỗi, dùng Mirror tăng tốc
 	if [ "$?" != 0 ] || [ ! -s "$tailscaled" ]; then
 		logger -t "【Tailscale】" "Direct download failed, trying mirror source..."
 		curl -Lko "$tailscaled" --connect-timeout 15 --retry 2 --max-time 300 "$mirror_url" || wget --no-check-certificate -T 20 -t 2 -O "$tailscaled" "$mirror_url"
@@ -133,7 +131,8 @@ dowload_ts() {
 
 	if [ -f "$tailscaled" ] && [ -s "$tailscaled" ] ; then
 		chmod +x $tailscaled
-		if "$tailscaled" version >/dev/null 2>&1 ; then
+		# ĐÃ SỬA: Đã thêm lại dấu '-' thành -version
+		if "$tailscaled" -version >/dev/null 2>&1 ; then
 			logger -t "【Tailscale】" "$tailscaled downloaded successfully"
 			ts_ver=$($tailscaled -version | sed -n 1p | awk -F '-' '{print $1}')
 			[ -n "$ts_ver" ] && [ "${ts_ver#v}" = "$ts_ver" ] && ts_ver="v${ts_ver}"
@@ -241,12 +240,12 @@ start_ts() {
 	logger -t "Tailscale" "Starting tailscale"
 	sed -Ei '/【Tailscaled】|^$/d' /tmp/script/_opt_script_check
 
-	# Quy trình ban đầu: Giữ nguyên việc gọi get_tag để cập nhật WebUI
 	[ ! -f "$tailscaled" ] && extract_bundled_ts
 	get_tag
 	if [ -f "$tailscaled" ] ; then
-		[ ! -x "$tailscaled" ] && chmod +x $tailscaled
-		if ! "$tailscaled" version >/dev/null 2>&1 ; then
+		[ ! -x "$tailscaled" ] && chmod +x "$tailscaled"
+		# ĐÃ SỬA: Thêm dấu '-' thành -version
+		if ! "$tailscaled" -version >/dev/null 2>&1 ; then
 			logger -t "【Tailscale】" "Program ${tailscaled} is incomplete!"
 			rm -rf "$tailscaled"
 		fi
@@ -257,7 +256,7 @@ start_ts() {
 		dowload_ts "$tag"
 	fi
 
-	# Kiểm tra an toàn: Tải lỗi dừng ngay, không cố chạy
+	# Kiểm tra an toàn: Tải lỗi dừng ngay
 	if [ ! -f "$tailscaled" ] ; then
 		logger -t "【Tailscale】" "ERROR: Main program /tmp/tailscaled missing or download failed!"
 		ts_restart x
