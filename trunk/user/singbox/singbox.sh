@@ -11,6 +11,12 @@ WATCHDOG_FILE="/tmp/script/_opt_script_check"
 RULESET_DIR="/tmp/sing-box/rule-set"
 SUB_CACHE="/tmp/sing-box/sub_raw.json"
 
+# Cập nhật Subscription: file lưu mốc thời gian lần cập nhật gần nhất (đặt ở
+# /etc/storage để không mất khi reboot) + chu kỳ tự động (giây). 3 ngày = 259200s
+LAST_SUB_UPDATE_FILE="/etc/storage/singbox_last_sub_update"
+SUB_UPDATE_INTERVAL=259200
+CRON_TAG="singbox_autoupdate"
+
 # Giữ nguyên REPO của bạn
 REPO="yourname/padavan-KVR"
 GH_API="https://api.github.com/repos/${REPO}/releases/latest"
@@ -345,6 +351,83 @@ generate_config() {
     log "Đã sinh config.json (mode=$mode, mem_limit=$mem_limit, bypass_vn=$bypass_vn, adblock=$adblock, dns_mode=$dns_mode, final=$final_tag)"
 }
 
+# ----- Cron: tự động cập nhật Sub 3 ngày/lần -----
+# Lưu ý: busybox cru không hỗ trợ "cách N ngày" đáng tin cậy (trường ngày-trong-tháng
+# sẽ lệch chu kỳ qua các tháng), nên ta đặt cron chạy KIỂM TRA mỗi ngày lúc 4h sáng,
+# còn việc có thực sự tải lại hay không do update_sub() tự quyết theo mốc thời gian
+# lưu trong LAST_SUB_UPDATE_FILE (chỉ cập nhật khi đã đủ SUB_UPDATE_INTERVAL giây).
+install_cron() {
+    if ! command -v cru >/dev/null 2>&1; then
+        log "Không tìm thấy 'cru' trên firmware -> không thể lên lịch tự động cập nhật Sub"
+        return 1
+    fi
+    cru d "$CRON_TAG" >/dev/null 2>&1
+    cru a "$CRON_TAG" "0 4 * * * /usr/bin/singbox.sh update_sub"
+    log "Đã bật lịch tự động kiểm tra/cập nhật Sub (mỗi ngày 4h sáng, thực thi thật sự mỗi 3 ngày)"
+}
+
+remove_cron() {
+    command -v cru >/dev/null 2>&1 && cru d "$CRON_TAG" >/dev/null 2>&1
+}
+
+sync_cron_state() {
+    if [ "$(nv singbox_auto_update)" = "1" ]; then
+        install_cron
+    else
+        remove_cron
+    fi
+}
+
+# ----- Cập nhật lại nguồn Subscription -----
+# Gọi thủ công: singbox.sh update_sub force   (bỏ qua chu kỳ 3 ngày, luôn tải lại)
+# Gọi từ cron : singbox.sh update_sub         (chỉ tải lại nếu đã đủ 3 ngày)
+update_sub() {
+    force="$1"
+    now="$(date +%s 2>/dev/null)"
+    case "$now" in ''|*[!0-9]*) now=0 ;; esac
+
+    if [ "$force" != "force" ] && [ -f "$LAST_SUB_UPDATE_FILE" ]; then
+        last="$(cat "$LAST_SUB_UPDATE_FILE" 2>/dev/null)"
+        case "$last" in ''|*[!0-9]*) last=0 ;; esac
+        elapsed=$(( now - last ))
+        if [ "$last" -gt 0 ] && [ "$elapsed" -lt "$SUB_UPDATE_INTERVAL" ]; then
+            log "update_sub: lần cập nhật gần nhất cách đây $((elapsed / 3600))h, chưa đủ 3 ngày -> bỏ qua"
+            return 0
+        fi
+    fi
+
+    sb_mode="$(nv singbox_mode)"
+    case "$sb_mode" in
+        0|1) ;;
+        *)
+            log "update_sub: chỉ hỗ trợ tự động gộp Sub ở Mode 1/2 (Mixed/TUN) - Mode 3 dùng JSON tùy chỉnh nên bỏ qua"
+            return 1
+            ;;
+    esac
+
+    log "===== Bắt đầu cập nhật nguồn Subscription ($([ "$force" = "force" ] && echo thủ công || echo tự động)) ====="
+
+    if is_running; then
+        # restart() sẽ gọi lại ensure_config -> generate_config, và generate_config
+        # gọi fetch_all_groups() tải MỚI từng sub trong singbox_sub_list -> đảm bảo
+        # dùng đúng dữ liệu mới nhất thay vì cache cũ.
+        restart
+        ok=$?
+    else
+        generate_config "$sb_mode"
+        ok=0
+        log "update_sub: sing-box hiện chưa chạy, đã tái tạo sẵn config, sẽ áp dụng ở lần start kế tiếp"
+    fi
+
+    if [ "$ok" = "0" ]; then
+        echo "$now" > "$LAST_SUB_UPDATE_FILE"
+        log "===== Cập nhật Subscription hoàn tất ====="
+    else
+        log "===== Cập nhật Subscription THẤT BẠI (restart lỗi) - giữ nguyên mốc thời gian cũ để thử lại lần sau ====="
+    fi
+    return "$ok"
+}
+
 ensure_config() {
     sb_mode="$(nv singbox_mode)"
     case "$sb_mode" in
@@ -418,12 +501,14 @@ start() {
     log "Process started (PID $(pidof sing-box))"
 
     install_watchdog
+    sync_cron_state
     return 0
 }
 
 stop() {
     log "Stopping..."
     remove_watchdog
+    remove_cron
 
     # Tắt nhẹ nhàng trước (gửi SIGTERM)
     killall sing-box 2>/dev/null
@@ -459,9 +544,10 @@ status() {
 }
 
 case "$1" in
-    start)   start ;;
-    stop)    stop ;;
-    restart) restart ;;
-    status)  status ;;
-    *) echo "Usage: $0 {start|stop|restart|status}" ;;
+    start)      start ;;
+    stop)       stop ;;
+    restart)    restart ;;
+    status)     status ;;
+    update_sub) rotate_log; update_sub "$2" ;;
+    *) echo "Usage: $0 {start|stop|restart|status|update_sub [force]}" ;;
 esac
