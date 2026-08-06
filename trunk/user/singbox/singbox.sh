@@ -152,7 +152,7 @@ build_dns_block() {
             cat <<-EOF
   "dns": {
     "servers": [
-      { "tag": "dns-remote", "address": "tls://8.8.8.8" },
+      { "tag": "dns-remote", "address": "tls://8.8.8.8", "detour": "direct" },
       { "tag": "dns-fakeip", "address": "fakeip" }
     ],
     "fakeip": { "enabled": true, "inet4_range": "198.18.0.0/15" },
@@ -165,7 +165,7 @@ EOF
             cat <<-EOF
   "dns": {
     "servers": [
-      { "tag": "dns-remote", "address": "https://1.1.1.1/dns-query" },
+      { "tag": "dns-remote", "address": "https://1.1.1.1/dns-query", "detour": "direct" },
       { "tag": "dns-direct", "address": "https://dns.google/dns-query", "detour": "direct" }
     ],
     "independent_cache": true
@@ -255,7 +255,7 @@ generate_config() {
     if [ "$mode" = "0" ]; then
         inbound_block='  "inbounds": [ { "type": "mixed", "tag": "mixed-in", "listen": "0.0.0.0", "listen_port": 7890 } ],'
     else
-        inbound_block='  "inbounds": [ { "type": "tun", "tag": "tun-in", "interface_name": "singbox0", "address": ["172.19.0.1/30"], "mtu": 9000, "auto_route": true, "strict_route": true, "stack": "system", "sniff": true } ],'
+        inbound_block='  "inbounds": [ { "type": "tun", "tag": "tun-in", "interface_name": "singbox0", "address": ["172.19.0.1/30"], "mtu": 1500, "auto_route": true, "strict_route": true, "stack": "system", "sniff": true } ],'
     fi
 
     proxy_outbounds="[]"
