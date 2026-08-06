@@ -3963,6 +3963,16 @@ apply_cgi(const char *url, webs_t wp)
 		websRedirect(wp, current_url);
 		return 0;
 	}
+	else if (!strcmp(value, " UpdateSingboxSub "))
+	{
+		// Cập nhật lại toàn bộ nguồn Subscription ngay lập tức (bỏ qua chu kỳ 3 ngày),
+		// chạy nền để không block request web (dashboard/reload sẽ mất vài giây).
+#if defined(APP_SINGBOX)
+		system("/usr/bin/singbox.sh update_sub force >/dev/null 2>&1 &");
+#endif
+		websRedirect(wp, current_url);
+		return 0;
+	}
 	else if (!strcmp(value, " CleareasytierLog "))
 	{
 #if defined(APP_EASYTIER)

@@ -1264,6 +1264,7 @@
 			{"singbox_dns_mode", "", NULL, EVM_RESTART_SINGBOX},
 			{"singbox_mem_limit", "", NULL, EVM_RESTART_SINGBOX},
 			{"singbox_sub_list", "", NULL, EVM_RESTART_SINGBOX},
+			{"singbox_auto_update", "", NULL, EVM_RESTART_SINGBOX},
 			{"scripts.singbox.conf", "File", NULL, EVM_RESTART_SINGBOX},
 			{0,0,0,0}
 	};
