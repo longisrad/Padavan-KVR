@@ -282,7 +282,7 @@ EOF
 GROUP_DIR="/tmp/sing-box/groups"
 
 fetch_all_groups() {
-    sub_list_json="$(nv singbox_sub_list)"
+    sub_list_json="$(cat /etc/storage/singbox_sub.json 2>/dev/null)"
     [ -z "$sub_list_json" ] && { log "Chưa có Subscription nào trong singbox_sub_list"; return 1; }
 
     if ! have_jq; then
