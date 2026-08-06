@@ -203,7 +203,7 @@ download_jq() {
     return 0
 }
 
-# ĐÃ SỬA: Loại bỏ "detour": "direct" để tương thích với sing-box v1.13+
+# ĐÃ SỬA: Dùng IP trực tiếp (1.1.1.1, 8.8.8.8) để tránh lỗi FATAL missing domain resolver
 build_dns_block() {
     case "$1" in
         1)
@@ -222,8 +222,8 @@ EOF
             cat <<-EOF
   "dns": {
     "servers": [
-      { "tag": "dns-remote", "type": "https", "server": "dns.cloudflare.com" },
-      { "tag": "dns-direct", "type": "https", "server": "dns.google" }
+      { "tag": "dns-remote", "type": "https", "server": "1.1.1.1", "path": "/dns-query" },
+      { "tag": "dns-direct", "type": "udp", "server": "8.8.8.8" }
     ],
     "independent_cache": true
   },
@@ -246,15 +246,14 @@ build_route_block() {
     rules=""
 
     if [ "$bypass_vn" = "1" ]; then
-        rulesets="${rulesets}    { \"tag\": \"geosite-vn\", \"type\": \"remote\", \"format\": \"binary\", \"url\": \"https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-vn.srs\", \"download_detour\": \"direct\" },
-    { \"tag\": \"geoip-vn\", \"type\": \"remote\", \"format\": \"binary\", \"url\": \"https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-vn.srs\", \"download_detour\": \"direct\" },
+        rulesets="${rulesets}    { \"tag\": \"geoip-vn\", \"type\": \"remote\", \"format\": \"binary\", \"url\": \"https://testingcf.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-vn.srs\", \"download_detour\": \"direct\" },
 "
-        rules="${rules}    { \"rule_set\": [\"geosite-vn\",\"geoip-vn\"], \"outbound\": \"direct\" },
+        rules="${rules}    { \"rule_set\": \"geoip-vn\", \"outbound\": \"direct\" },
 "
     fi
 
     if [ "$adblock" = "1" ]; then
-        rulesets="${rulesets}    { \"tag\": \"geosite-ads\", \"type\": \"remote\", \"format\": \"binary\", \"url\": \"https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs\", \"download_detour\": \"direct\" },
+        rulesets="${rulesets}    { \"tag\": \"geosite-ads\", \"type\": \"remote\", \"format\": \"binary\", \"url\": \"https://testingcf.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-category-ads-all.srs\", \"download_detour\": \"direct\" },
 "
         rules="${rules}    { \"rule_set\": \"geosite-ads\", \"outbound\": \"block\" },
 "
@@ -356,11 +355,10 @@ generate_config() {
     dns_mode="$(nv singbox_dns_mode)"
     [ -z "$dns_mode" ] && dns_mode="1"
 
-    # ĐÃ SỬA: Loại bỏ các trường legacy "sniff": true
     if [ "$mode" = "0" ]; then
         inbound_block='  "inbounds": [ { "type": "mixed", "tag": "mixed-in", "listen": "0.0.0.0", "listen_port": 7890 } ],'
     else
-        inbound_block='  "inbounds": [ { "type": "tun", "tag": "tun-in", "interface_name": "singbox0", "address": ["172.19.0.1/30"], "mtu": 1500, "auto_route": true, "stack": "system" } ],'
+        inbound_block='  "inbounds": [ { "type": "tun", "tag": "tun-in", "interface_name": "singbox0", "address": ["172.19.0.1/30"], "mtu": 1500, "auto_route": false, "stack": "system" } ],'
     fi
 
     if fetch_all_groups; then
@@ -378,7 +376,6 @@ generate_config() {
         outbounds_body=""
     fi
 
-    # ĐÃ SỬA: secret = "" để Dashboard mở mượt mà
     {
         echo "{"
         echo "  \"log\": { \"level\": \"info\", \"timestamp\": true },"
@@ -521,6 +518,9 @@ start() {
     log "Starting..."
     rotate_log
     mkdir -p "$WORK_DIR"
+    
+    # Dọn dẹp cache bị khóa cũ
+    rm -f /tmp/sing-box/cache.db*
 
     if ! ensure_binary; then
         log "Cannot start: no working binary"
