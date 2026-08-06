@@ -8,6 +8,8 @@ WORK_DIR="/tmp/sing-box/work"
 LOG_FILE="/tmp/singbox.log"
 LOG_TAG="sing-box"
 WATCHDOG_FILE="/tmp/script/_opt_script_check"
+RULESET_DIR="/tmp/sing-box/rule-set"
+SUB_CACHE="/tmp/sing-box/sub_raw.json"
 
 # Giữ nguyên REPO của bạn
 REPO="yourname/padavan-KVR"
@@ -138,33 +140,193 @@ ensure_dashboard() {
     return 0
 }
 
+nv() {
+    # nvram get an toàn (không lỗi nếu key chưa tồn tại)
+    nvram get "$1" 2>/dev/null
+}
+
+# ----- Khối DNS theo singbox_dns_mode: 0=Direct 1=FakeIP 2=DoH -----
+build_dns_block() {
+    case "$1" in
+        1)
+            cat <<-EOF
+  "dns": {
+    "servers": [
+      { "tag": "dns-remote", "address": "tls://8.8.8.8" },
+      { "tag": "dns-fakeip", "address": "fakeip" }
+    ],
+    "fakeip": { "enabled": true, "inet4_range": "198.18.0.0/15" },
+    "rules": [ { "query_type": ["A","AAAA"], "server": "dns-fakeip" } ],
+    "independent_cache": true
+  },
+EOF
+            ;;
+        2)
+            cat <<-EOF
+  "dns": {
+    "servers": [
+      { "tag": "dns-remote", "address": "https://1.1.1.1/dns-query" },
+      { "tag": "dns-direct", "address": "https://dns.google/dns-query", "detour": "direct" }
+    ],
+    "independent_cache": true
+  },
+EOF
+            ;;
+        *)
+            cat <<-EOF
+  "dns": {
+    "servers": [ { "tag": "dns-direct", "address": "8.8.8.8", "detour": "direct" } ],
+    "independent_cache": true
+  },
+EOF
+            ;;
+    esac
+}
+
+# ----- Route rules: bypass VN + AdBlock (dùng SRS rule-set chính chủ SagerNet) -----
+build_route_block() {
+    bypass_vn="$1"; adblock="$2"; final_tag="$3"
+    rulesets=""
+    rules=""
+
+    if [ "$bypass_vn" = "1" ]; then
+        rulesets="${rulesets}    { \"tag\": \"geosite-vn\", \"type\": \"remote\", \"format\": \"binary\", \"url\": \"https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-vn.srs\", \"download_detour\": \"direct\" },
+    { \"tag\": \"geoip-vn\", \"type\": \"remote\", \"format\": \"binary\", \"url\": \"https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-vn.srs\", \"download_detour\": \"direct\" },
+"
+        rules="${rules}    { \"rule_set\": [\"geosite-vn\",\"geoip-vn\"], \"outbound\": \"direct\" },
+"
+    fi
+
+    if [ "$adblock" = "1" ]; then
+        rulesets="${rulesets}    { \"tag\": \"geosite-ads\", \"type\": \"remote\", \"format\": \"binary\", \"url\": \"https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs\", \"download_detour\": \"direct\" },
+"
+        rules="${rules}    { \"rule_set\": \"geosite-ads\", \"outbound\": \"block\" },
+"
+    fi
+
+    cat <<-EOF
+  "route": {
+    "rule_set": [
+${rulesets%,
+}
+    ],
+    "rules": [
+${rules}    { "ip_is_private": true, "outbound": "direct" }
+    ],
+    "final": "${final_tag}",
+    "auto_detect_interface": true
+  },
+EOF
+}
+
+# ----- Lấy outbounds từ Subscription (yêu cầu link trả về config dạng sing-box JSON) -----
+fetch_sub_outbounds() {
+    sub_list_json="$(nv singbox_sub_list)"
+    [ -z "$sub_list_json" ] && { log "Chưa có Subscription nào trong singbox_sub_list"; return 1; }
+
+    if ! command -v jq >/dev/null 2>&1; then
+        log "CANH BAO: thieu 'jq' tren firmware -> khong the tu dong hop nhat outbounds tu Subscription. Hay dung Mode 3 (Custom JSON) hoac cai jq."
+        return 1
+    fi
+
+    first_url="$(echo "$sub_list_json" | jq -r '.[0].url // empty' 2>/dev/null)"
+    [ -z "$first_url" ] && { log "Không đọc được URL từ singbox_sub_list"; return 1; }
+
+    log "Đang tải subscription: $first_url"
+    curl -Lksfo "$SUB_CACHE" --connect-timeout 10 --max-time 30 "$first_url" \
+        || wget --no-check-certificate -T 15 -q -O "$SUB_CACHE" "$first_url"
+
+    if ! jq -e '.outbounds' "$SUB_CACHE" >/dev/null 2>&1; then
+        log "Subscription không phải định dạng sing-box JSON hợp lệ (thiếu outbounds[])"
+        return 1
+    fi
+    return 0
+}
+
+# ----- Sinh config.json đầy đủ cho Mode 0 (Mixed proxy) và Mode 1 (TUN) -----
+generate_config() {
+    mode="$1"
+    mem_limit="$(nv singbox_mem_limit)"
+    [ -z "$mem_limit" ] && mem_limit="48MiB"
+    bypass_vn="$(nv singbox_bypass_vn)"
+    adblock="$(nv singbox_adblock)"
+    dns_mode="$(nv singbox_dns_mode)"
+
+    if [ "$mode" = "0" ]; then
+        inbound_block='  "inbounds": [ { "type": "mixed", "tag": "mixed-in", "listen": "0.0.0.0", "listen_port": 7890 } ],'
+    else
+        inbound_block='  "inbounds": [ { "type": "tun", "tag": "tun-in", "interface_name": "singbox0", "address": ["172.19.0.1/30"], "mtu": 9000, "auto_route": true, "strict_route": true, "stack": "system", "sniff": true } ],'
+    fi
+
+    proxy_outbounds="[]"
+    select_targets="[]"
+    have_sub=0
+    if fetch_sub_outbounds; then
+        proxy_outbounds="$(jq -c '[.outbounds[] | select(.type!="direct" and .type!="block" and .type!="dns" and .type!="selector" and .type!="urltest")]' "$SUB_CACHE")"
+        select_targets="$(echo "$proxy_outbounds" | jq -c '[.[].tag]')"
+        [ "$(echo "$select_targets" | jq 'length')" -gt 0 ] && have_sub=1
+    fi
+
+    if [ "$have_sub" = "1" ]; then
+        final_tag="select"
+        selector_block=$(cat <<-EOF
+    { "type": "selector", "tag": "select", "outbounds": $(echo "$select_targets" | jq -c '. + ["direct"]') },
+EOF
+)
+        outbounds_body="$(echo "$proxy_outbounds" | jq -c '.[]' | sed 's/$/,/')"
+    else
+        log "Không có proxy nào từ Subscription -> chạy tạm ở chế độ Direct (chưa proxy hoá được traffic)"
+        final_tag="direct"
+        selector_block=""
+        outbounds_body=""
+    fi
+
+    {
+        echo "{"
+        echo "  \"log\": { \"level\": \"info\", \"timestamp\": true },"
+        echo "  \"experimental\": {"
+        echo "    \"clash_api\": { \"external_controller\": \"0.0.0.0:9090\", \"external_ui\": \"${UI_DIR}\", \"secret\": \"admin\" },"
+        echo "    \"cache_file\": { \"enabled\": true, \"path\": \"/tmp/sing-box/cache.db\" }"
+        echo "  },"
+        echo "$inbound_block"
+        build_dns_block "$dns_mode"
+        build_route_block "$bypass_vn" "$adblock" "$final_tag"
+        echo "  \"outbounds\": ["
+        echo "$selector_block"
+        echo "$outbounds_body"
+        echo "    { \"type\": \"direct\", \"tag\": \"direct\" },"
+        echo "    { \"type\": \"block\", \"tag\": \"block\" }"
+        echo "  ]"
+        echo "}"
+    } > "$CFG_PATH"
+
+    log "Đã sinh config.json (mode=$mode, mem_limit=$mem_limit, bypass_vn=$bypass_vn, adblock=$adblock, dns_mode=$dns_mode)"
+}
+
 ensure_config() {
-    if [ ! -s "$CFG_PATH" ]; then
-        cat > "$CFG_PATH" <<-EOF
+    sb_mode="$(nv singbox_mode)"
+    case "$sb_mode" in
+        0|1)
+            generate_config "$sb_mode"
+            ;;
+        2)
+            if [ ! -s "$CFG_PATH" ]; then
+                log "Mode 3 (Custom JSON) nhưng $CFG_PATH rỗng - hãy dán config vào ô Raw JSON trên webui rồi Apply lại."
+            fi
+            ;;
+        *)
+            if [ ! -s "$CFG_PATH" ]; then
+                cat > "$CFG_PATH" <<-EOF
 {
   "log": { "level": "info", "timestamp": true },
-  "experimental": {
-    "clash_api": {
-      "external_controller": "0.0.0.0:9090",
-      "external_ui": "${UI_DIR}",
-      "secret": "admin"
-    }
-  },
-  "inbounds": [
-    {
-      "type": "mixed",
-      "tag": "mixed-in",
-      "listen": "0.0.0.0",
-      "listen_port": 7890
-    }
-  ],
-  "outbounds": [
-    { "type": "direct", "tag": "direct" }
-  ]
+  "inbounds": [ { "type": "mixed", "tag": "mixed-in", "listen": "0.0.0.0", "listen_port": 7890 } ],
+  "outbounds": [ { "type": "direct", "tag": "direct" } ]
 }
 EOF
-        log "Generated placeholder config at $CFG_PATH"
-    fi
+                log "Generated placeholder config at $CFG_PATH"
+            fi
+            ;;
+    esac
 }
 
 install_watchdog() {
@@ -198,8 +360,10 @@ start() {
     ensure_dashboard
     ensure_config
 
-    # TỐI ƯU BỘ NHỚ RAM CHO GO RUNTIME (Rất quan trọng cho Router 512MB/256MB RAM)
-    export GOMEMLIMIT=64MiB
+    # TỐI ƯU BỘ NHỚ RAM CHO GO RUNTIME - lấy từ webui (Giới hạn RAM), mặc định 48MiB
+    mem_limit="$(nv singbox_mem_limit)"
+    [ -z "$mem_limit" ] && mem_limit="48MiB"
+    export GOMEMLIMIT="$mem_limit"
     export GOGC=30
 
     cd "$WORK_DIR" && "$BIN_PATH" run -c "$CFG_PATH" >> "$LOG_FILE" 2>&1 &
