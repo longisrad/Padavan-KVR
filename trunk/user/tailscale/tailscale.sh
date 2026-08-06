@@ -28,9 +28,11 @@ tailscale_renum=`nvram get tailscale_renum`
 
 BUNDLED_TS_BIN="/etc/tailscaled.bin"
 
-# Hàm kiểm tra dung lượng bộ nhớ RAM khả dụng chuẩn Linux (/proc/meminfo)
+# Hàm kiểm tra RAM tương thích mọi Kernel Linux
 get_free_ram_mb() {
-	awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || awk '/MemFree/ {print int($2/1024)}' /proc/meminfo
+	mem=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo 2>/dev/null)
+	[ -z "$mem" ] && mem=$(awk '/MemFree/ {print int($2/1024)}' /proc/meminfo 2>/dev/null)
+	echo "${mem:-0}"
 }
 
 extract_bundled_ts() {
@@ -85,60 +87,74 @@ get_tag() {
 	curltest=`which curl`
 	logger -t "【Tailscale】" "Fetching latest version..."
 	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-		tag="$( wget --no-check-certificate -T 5 -t 3 --user-agent "$user_agent" --output-document=- https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
-		[ -z "$tag" ] && tag="$( wget --no-check-certificate -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=- https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
+		tag="$( wget --no-check-certificate -T 10 -t 3 --user-agent "$user_agent" --output-document=- https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
+		[ -z "$tag" ] && tag="$( wget --no-check-certificate -T 10 -t 3 --user-agent "$user_agent" --quiet --output-document=- https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
 	else
-		tag="$( curl -k --connect-timeout 3 --user-agent "$user_agent" https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
-		[ -z "$tag" ] && tag="$( curl -Lk --connect-timeout 3 --user-agent "$user_agent" -s https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
+		tag="$( curl -k --connect-timeout 5 --user-agent "$user_agent" https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
+		[ -z "$tag" ] && tag="$( curl -Lk --connect-timeout 5 --user-agent "$user_agent" -s https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
 	fi
-	[ -z "$tag" ] && logger -t "【Tailscale】" "Could not fetch latest version"
+
+	# Đảm bảo tag luôn có 'v' ở đầu
+	[ -n "$tag" ] && [ "${tag#v}" = "$tag" ] && tag="v${tag}"
+	[ -z "$tag" ] && logger -t "【Tailscale】" "Could not fetch latest version" && tag="v1.78.1"
+	
 	nvram set tailscale_ver_n=$tag
+
 	if [ -f "$tailscaled" ] ; then
 		chmod +x $tailscaled
 		ts_ver=$($tailscaled -version | sed -n 1p | awk -F '-' '{print $1}')
-		if [ -z "$ts_ver" ] ; then
-			nvram set tailscale_ver=""
-		else
-			nvram set tailscale_ver=$ts_ver
-		fi
+		[ -n "$ts_ver" ] && [ "${ts_ver#v}" = "$ts_ver" ] && ts_ver="v${ts_ver}"
+		nvram set tailscale_ver="${ts_ver:-}"
 	fi
 }
 
 dowload_ts() {
 	tag="$1"
+	[ "${tag#v}" = "$tag" ] && tag="v${tag}"
+
 	bin_path=$(dirname "$tailscaled")
 	[ ! -d "$bin_path" ] && mkdir -p "$bin_path"
-	logger -t "【Tailscale】" "Starting download https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full to $tailscaled"
 	
+	dl_url="https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full"
+	mirror_url="https://ghp.ci/https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full"
+
+	logger -t "【Tailscale】" "Starting download ${dl_url} to $tailscaled"
 	tailscaled_size0="$(get_free_ram_mb)"
 	logger -t "【Tailscale】" "Free RAM space: ${tailscaled_size0}M"
 	
-	curl -Lko "$tailscaled" --connect-timeout 10 --retry 2 --max-time 90 "https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full" || wget --no-check-certificate -T 15 -t 2 -O "$tailscaled" "https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full"
+	# Thử tải từ GitHub gốc (Timeout 300 giây)
+	curl -Lko "$tailscaled" --connect-timeout 15 --retry 2 --max-time 300 "$dl_url" || wget --no-check-certificate -T 20 -t 2 -O "$tailscaled" "$dl_url"
 	
-	if [ "$?" = 0 ] ; then
+	# Nếu lỗi, dùng Mirror tăng tốc
+	if [ "$?" != 0 ] || [ ! -s "$tailscaled" ]; then
+		logger -t "【Tailscale】" "Direct download failed, trying mirror source..."
+		curl -Lko "$tailscaled" --connect-timeout 15 --retry 2 --max-time 300 "$mirror_url" || wget --no-check-certificate -T 20 -t 2 -O "$tailscaled" "$mirror_url"
+	fi
+
+	if [ -f "$tailscaled" ] && [ -s "$tailscaled" ] ; then
 		chmod +x $tailscaled
 		if "$tailscaled" version >/dev/null 2>&1 ; then
 			logger -t "【Tailscale】" "$tailscaled downloaded successfully"
 			ts_ver=$($tailscaled -version | sed -n 1p | awk -F '-' '{print $1}')
-			if [ -z "$ts_ver" ] ; then
-				nvram set tailscale_ver=""
-			else
-				nvram set tailscale_ver=$ts_ver
-			fi
+			[ -n "$ts_ver" ] && [ "${ts_ver#v}" = "$ts_ver" ] && ts_ver="v${ts_ver}"
+			nvram set tailscale_ver="${ts_ver:-}"
 		else
 			logger -t "【Tailscale】" "Download incomplete or corrupt"
 			rm -f $tailscaled
 		fi
 	else
 		logger -t "【Tailscale】" "Download failed"
+		rm -f $tailscaled
 	fi
 }
 
 update_ts() {
 	get_tag
 	[ -z "$tag" ] && logger -t "【Tailscale】" "Could not fetch latest version" && exit 1
-	if [ -n "$tag" ] && [ -n "$ts_ver" ] ; then
-		if [ "$tag" != "$ts_ver" ] ; then
+	clean_tag="${tag#v}"
+	clean_ver="${ts_ver#v}"
+	if [ -n "$clean_tag" ] && [ -n "$clean_ver" ] ; then
+		if [ "$clean_tag" != "$clean_ver" ] ; then
 			logger -t "【Tailscale】" "Current version ${ts_ver}, latest version ${tag}"
 			dowload_ts $tag
 		else
@@ -225,24 +241,27 @@ start_ts() {
 	logger -t "Tailscale" "Starting tailscale"
 	sed -Ei '/【Tailscaled】|^$/d' /tmp/script/_opt_script_check
 
-	# 1. Thử giải nén từ Firmware nếu chưa có file
+	# Quy trình ban đầu: Giữ nguyên việc gọi get_tag để cập nhật WebUI
 	[ ! -f "$tailscaled" ] && extract_bundled_ts
-
-	# 2. Nếu vẫn chưa có file, MỚI gọi GitHub API để tải về
+	get_tag
+	if [ -f "$tailscaled" ] ; then
+		[ ! -x "$tailscaled" ] && chmod +x $tailscaled
+		if ! "$tailscaled" version >/dev/null 2>&1 ; then
+			logger -t "【Tailscale】" "Program ${tailscaled} is incomplete!"
+			rm -rf "$tailscaled"
+		fi
+	fi
 	if [ ! -f "$tailscaled" ] ; then
-		logger -t "【Tailscale】" "Main program ${tailscaled} not found, fetching latest release..."
-		get_tag
-		[ -z "$tag" ] && tag="1.78.1"
+		logger -t "【Tailscale】" "Main program ${tailscaled} not found, starting download..."
+		[ -z "$tag" ] && tag="v1.78.1"
 		dowload_ts "$tag"
 	fi
 
-	# 3. Kiểm tra tính hợp lệ của file binary
-	if [ -f "$tailscaled" ] ; then
-		[ ! -x "$tailscaled" ] && chmod +x "$tailscaled"
-		if ! "$tailscaled" version >/dev/null 2>&1 ; then
-			logger -t "【Tailscale】" "Program ${tailscaled} is corrupt or incomplete!"
-			rm -rf "$tailscaled"
-		fi
+	# Kiểm tra an toàn: Tải lỗi dừng ngay, không cố chạy
+	if [ ! -f "$tailscaled" ] ; then
+		logger -t "【Tailscale】" "ERROR: Main program /tmp/tailscaled missing or download failed!"
+		ts_restart x
+		exit 1
 	fi
 
 	kill_ts
@@ -257,7 +276,6 @@ start_ts() {
 	tdCMD="$tailscaled --state=/etc/storage/tailscale/lib/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock"
 	logger -t "【Tailscale】" "Running main program $tdCMD"
 	
-	# Ép Go Runtime giải phóng bộ nhớ (Cực kỳ quan trọng cho RAM 512MB/256MB)
 	export GOMEMLIMIT=48MiB
 	export GOGC=25
 	
