@@ -481,7 +481,6 @@ ensure_config() {
 }
 EOF
                 log "Generated placeholder config at $CFG_PATH"
-                [ -x /sbin/mtd_storage.sh ] && /sbin/mtd_storage.sh save >/dev/null 2>&1
             fi
             ;;
     esac
