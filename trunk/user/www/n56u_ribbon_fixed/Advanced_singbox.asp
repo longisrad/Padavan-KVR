@@ -15,10 +15,34 @@
 <script type="text/javascript" src="/help.js"></script>
 
 <script>
+var $j = jQuery.noConflict();
+
 function initial(){
 	show_banner(2);
 	show_menu(5, 30, 0);
 	show_footer();
+	$j("#tab_singbox_cfg, #tab_singbox_log").click(function () {
+		var newHash = $j(this).attr('href').toLowerCase();
+		showTab(newHash);
+		return false;
+	});
+}
+
+var arrHashes = ["cfg","log"];
+function showTab(curHash) {
+	var obj = $('tab_singbox_' + curHash.slice(1));
+	if (obj == null || obj.style.display == 'none')
+		curHash = '#cfg';
+	for (var i = 0; i < arrHashes.length; i++) {
+		if (curHash == ('#' + arrHashes[i])) {
+			$j('#tab_singbox_' + arrHashes[i]).parents('li').addClass('active');
+			$j('#wnd_singbox_' + arrHashes[i]).show();
+		} else {
+			$j('#wnd_singbox_' + arrHashes[i]).hide();
+			$j('#tab_singbox_' + arrHashes[i]).parents('li').removeClass('active');
+		}
+	}
+	window.location.hash = curHash;
 }
 
 function applyRule(){
@@ -29,8 +53,41 @@ function applyRule(){
 	document.form.submit();
 }
 
+function toggleConfig(){
+	var row = document.getElementById('singbox_config_row');
+	row.style.display = (row.style.display === 'none') ? '' : 'none';
+}
+
+function loadFromUrl(){
+	var url = document.getElementById('cfg_url').value.trim();
+	var status = document.getElementById('cfg_url_status');
+	if (!url) { status.innerHTML = 'Enter a URL first'; return; }
+	status.innerHTML = 'Loading...';
+	$j.ajax({
+		url: url,
+		dataType: 'text',
+		timeout: 10000,
+		success: function(data){
+			try { JSON.parse(data); } catch(e) {
+				status.innerHTML = '<span style="color:#d9534f;">Fetched, but not valid JSON - review before Apply</span>';
+				document.getElementById('singbox_config').value = data;
+				return;
+			}
+			document.getElementById('singbox_config').value = data;
+			status.innerHTML = '<span style="color:#5cb85c;">Loaded OK - review then click Apply</span>';
+		},
+		error: function(){
+			status.innerHTML = '<span style="color:#d9534f;">Failed to fetch (CORS or network) - paste manually instead</span>';
+		}
+	});
+}
+
+function openDashboard(){
+	var ip = "<% nvram_get_x("","lan_ipaddr"); %>";
+	window.open("http://" + ip + ":9090/ui", "_blank");
+}
+
 function clearLog(){
-	var $j = jQuery.noConflict();
 	$j.post('/apply.cgi', { 'action_mode': ' ClearSingboxLog ' })
 		.always(function(){ setTimeout(function(){ location.reload(); }, 2000); });
 }
@@ -69,6 +126,14 @@ function clearLog(){
 	<div class="box well grad_colour_dark_blue">
 	<h2 class="box_head round_top">sing-box</h2>
 	<div class="round_bottom">
+	<div>
+	<ul class="nav nav-tabs" style="margin-bottom: 10px;">
+		<li class="active"><a id="tab_singbox_cfg" href="#cfg">Basic Settings</a></li>
+		<li><a id="tab_singbox_log" href="#log">Run Log</a></li>
+	</ul>
+	</div>
+
+	<div id="wnd_singbox_cfg">
 
 	<div class="alert alert-info" style="margin:10px;">
 		A universal proxy platform supporting VLESS, VMess, Trojan, Shadowsocks, Hysteria2 and more.
@@ -79,12 +144,6 @@ function clearLog(){
 	<div style="margin:10px; text-align:center;">
 		<a class="btn btn-success" style="width:260px; font-size:15px;" href="javascript:void(0);" onclick="openDashboard();">Open sing-box Dashboard</a>
 	</div>
-	<script>
-	function openDashboard(){
-		var ip = "<% nvram_get_x("","lan_ipaddr"); %>";
-		window.open("http://" + ip + ":9090/ui", "_blank");
-	}
-	</script>
 
 	<table width="100%" cellpadding="4" cellspacing="0" class="table">
 	<tr><th colspan="2" style="background-color:#756c78;">Control</th></tr>
@@ -112,32 +171,29 @@ function clearLog(){
 	</th></tr>
 	<tr id="singbox_config_row" style="display:none;">
 		<td>
-			<span style="color:#888;">Paste your full sing-box config.json here (inbounds/outbounds/route/dns). Invalid JSON will fail to start - check the log tab below after Apply.</span><br>
-			<textarea name="singbox_config" class="input" style="width:100%; height:400px; font-family:'Courier New',monospace; font-size:12px;"><% nvram_dump_x("scripts.singbox.conf",""); %></textarea>
+			<div style="margin-bottom:8px;">
+				<input type="text" id="cfg_url" class="input" placeholder="https://example.com/config.json" style="width:60%;">
+				<input class="btn btn-info" type="button" value="Load from URL" onclick="loadFromUrl();">
+				<span id="cfg_url_status" style="color:#888; margin-left:8px;"></span>
+			</div>
+			<span style="color:#888;">Paste your full sing-box config.json here (inbounds/outbounds/route/dns), or fetch it from a URL above. Invalid JSON will fail to start - check the Run Log tab after Apply.</span><br>
+			<textarea name="singbox_config" id="singbox_config" class="input" style="width:100%; height:400px; font-family:'Courier New',monospace; font-size:12px;"><% nvram_dump_x("scripts.singbox.conf",""); %></textarea>
 		</td>
 	</tr>
 	</table>
-	<script>
-	function toggleConfig(){
-		var row = document.getElementById('singbox_config_row');
-		row.style.display = (row.style.display === 'none') ? '' : 'none';
-	}
-	</script>
 
 	<div style="margin:10px;">
 		<center><input class="btn btn-primary" style="width:219px" type="button" value="<#CTL_apply#>" onclick="applyRule()" /></center>
 	</div>
 
-	<table width="100%" cellpadding="4" cellspacing="0" class="table">
-	<tr><th colspan="2" style="background-color:#756c78;">Run Log
+	</div>
+
+	<div id="wnd_singbox_log" style="display:none;">
+	<div class="alert alert-info" style="margin:10px;">Live log output from sing-box.
 		<input class="btn btn-danger" style="float:right;" type="button" value="Clear Log" onclick="clearLog()" />
-	</th></tr>
-	<tr>
-		<td>
-			<textarea rows="20" class="span12" readonly wrap="off" style="font-family:'Courier New',monospace; font-size:12px;"><% nvram_dump("sing-box.log",""); %></textarea>
-		</td>
-	</tr>
-	</table>
+	</div>
+	<textarea rows="21" class="span12" style="height:377px; font-family:'Courier New', Courier, mono; font-size:13px;" readonly="readonly" wrap="off" id="textarea"><% nvram_dump("sing-box.log",""); %></textarea>
+	</div>
 
 	</div>
 	</div>
