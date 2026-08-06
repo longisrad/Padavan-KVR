@@ -1748,6 +1748,8 @@
 #endif
 #if defined(APP_ADGUARDHOME)
 		{"AdguardHomeConf",		variables_AdguardHomeConf},
+#endif
+#if defined(APP_SINGBOX)
 		{"SingboxConf",		variables_SingboxConf},
 #endif
 #if defined(APP_CADDY)
@@ -1911,6 +1913,8 @@
 #endif
 #if defined(APP_ADGUARDHOME)
 		{EVM_RESTART_ADGUARDHOME,		EVT_RESTART_ADGUARDHOME,		RCN_RESTART_ADGUARDHOME,	0},
+#endif
+#if defined(APP_SINGBOX)
 		{EVM_RESTART_SINGBOX,		EVT_RESTART_SINGBOX,		RCN_RESTART_SINGBOX,	0},
 #endif
 #if defined(APP_CADDY)
