@@ -392,7 +392,6 @@ generate_config() {
     } > "$CFG_PATH"
 
     log "Đã sinh config.json (mode=$mode, mem_limit=$mem_limit, bypass_vn=$bypass_vn, adblock=$adblock, dns_mode=$dns_mode, final=$final_tag)"
-    [ -x /sbin/mtd_storage.sh ] && /sbin/mtd_storage.sh save >/dev/null 2>&1
 }
 
 install_cron() {
