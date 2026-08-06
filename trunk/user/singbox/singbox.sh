@@ -1,9 +1,7 @@
 #!/bin/sh
 # sing-box lifecycle manager for Padavan-KVR (NEWIFI3)
 
-# Bổ sung /opt/bin, /opt/sbin (Entware) vào PATH: khi script được gọi từ
-# web server hoặc cron, PATH thường bị rút gọn và thiếu các thư mục này,
-# khiến 'jq' cài qua opkg không được tìm thấy dù đã cài.
+# Bổ sung /opt/bin, /opt/sbin (Entware) vào PATH
 export PATH="/opt/sbin:/opt/bin:$PATH"
 
 BIN_DIR="/tmp/sing-box"
@@ -16,8 +14,7 @@ WATCHDOG_FILE="/tmp/script/_opt_script_check"
 RULESET_DIR="/tmp/sing-box/rule-set"
 SUB_CACHE="/tmp/sing-box/sub_raw.json"
 
-# Cập nhật Subscription: file lưu mốc thời gian lần cập nhật gần nhất (đặt ở
-# /etc/storage để không mất khi reboot) + chu kỳ tự động (giây). 3 ngày = 259200s
+# Cập nhật Subscription: file lưu mốc thời gian lần cập nhật gần nhất
 LAST_SUB_UPDATE_FILE="/etc/storage/singbox_last_sub_update"
 SUB_UPDATE_INTERVAL=259200
 CRON_TAG="singbox_autoupdate"
@@ -27,11 +24,10 @@ REPO="yourname/padavan-KVR"
 GH_API="https://api.github.com/repos/${REPO}/releases/latest"
 ASSET_NAME="sing-box.bin"
 
-# Tên asset jq tĩnh (mipsel) được GitHub Action build kèm và đính vào cùng Release
-# với sing-box.bin. Nếu Release không có asset này (workflow cũ / build lỗi),
-# script sẽ tự báo và bạn vẫn có thể dùng jq cài qua Entware như bình thường.
+# Tên asset jq tĩnh (mipsel)
 JQ_ASSET_NAME="jq-mipsle.bin"
-JQ_STORAGE_PATH="/etc/storage/jq"
+# ĐÃ SỬA: Đổi vị trí lưu jq sang /tmp RAM để KHÔNG làm tràn Flash /etc/storage
+JQ_STORAGE_PATH="/tmp/sing-box/jq"
 
 log() {
     logger -t "$LOG_TAG" "$1"
@@ -96,28 +92,21 @@ ensure_binary() {
 }
 
 UI_DIR="/tmp/sing-box/ui"
-UI_STORAGE_ARCHIVE="/etc/storage/singbox_ui.tar.gz"
 UI_URL="https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip"
 
 ensure_dashboard() {
+    # ĐÃ SỬA: Xóa bỏ file nén UI cũ trong /etc/storage nếu có để giải phóng bộ nhớ Flash bị tràn
+    if [ -f "/etc/storage/singbox_ui.tar.gz" ]; then
+        log "Cleaning up old UI archive from /etc/storage to free up Flash storage..."
+        rm -f "/etc/storage/singbox_ui.tar.gz"
+        [ -x /sbin/mtd_storage.sh ] && /sbin/mtd_storage.sh save >/dev/null 2>&1
+    fi
+
     # 1. Đã có trong /tmp RAM -> Bỏ qua
     [ -f "$UI_DIR/index.html" ] && return 0
 
-    # 2. Khôi phục từ Bộ nhớ cứng (/etc/storage) nếu đã lưu trước đó
-    if [ -f "$UI_STORAGE_ARCHIVE" ]; then
-        log "Restoring dashboard UI from persistent storage (/etc/storage)..."
-        mkdir -p "$UI_DIR"
-        tar -xzf "$UI_STORAGE_ARCHIVE" -C "$UI_DIR" 2>/dev/null
-        if [ -f "$UI_DIR/index.html" ]; then
-            log "Dashboard restored successfully from storage!"
-            return 0
-        fi
-        log "Stored dashboard archive corrupt, re-downloading..."
-        rm -f "$UI_STORAGE_ARCHIVE"
-    fi
-
-    # 3. Nếu chưa từng có -> Tải lần đầu tiên từ GitHub
-    log "Downloading Clash-compatible dashboard (metacubexd) for the first time..."
+    # 2. Tải trực tiếp Dashboard về /tmp RAM
+    log "Downloading Clash-compatible dashboard (metacubexd)..."
     mkdir -p "$UI_DIR"
     tmp_zip="/tmp/sing-box/ui.zip"
 
@@ -146,24 +135,14 @@ ensure_dashboard() {
     mv "$extracted_dir"/* "$UI_DIR"/
     rm -rf /tmp/sing-box/_uiextract
 
-    # 4. Lưu bản nén vào bộ nhớ cứng Flash (/etc/storage) để các lần sau dùng lại
-    if [ -f "$UI_DIR/index.html" ]; then
-        log "Saving dashboard UI to persistent storage (/etc/storage)..."
-        tar -czf "$UI_STORAGE_ARCHIVE" -C "$UI_DIR" . 2>/dev/null
-        [ -x /sbin/mtd_storage.sh ] && /sbin/mtd_storage.sh save >/dev/null 2>&1
-    fi
-
     log "Dashboard ready at $UI_DIR"
     return 0
 }
 
 nv() {
-    # nvram get an toàn (không lỗi nếu key chưa tồn tại)
     nvram get "$1" 2>/dev/null
 }
 
-# Dò tìm jq ở PATH lẫn các vị trí Entware phổ biến, phòng trường hợp
-# PATH của tiến trình gọi script (web server/cron) không có /opt/bin
 JQ_BIN=""
 have_jq() {
     [ -n "$JQ_BIN" ] && [ -x "$JQ_BIN" ] && return 0
@@ -175,8 +154,6 @@ have_jq() {
         fi
     done
 
-    # Không thấy jq ở đâu cả -> thử tự tải bản tĩnh (mipsel) đã build kèm firmware
-    # từ Release GitHub của bạn (nếu workflow build có bước "Build jq")
     if download_jq; then
         JQ_BIN="$JQ_STORAGE_PATH"
         return 0
@@ -185,8 +162,6 @@ have_jq() {
     return 1
 }
 
-# Tự tải jq tĩnh (mipsel) từ cùng Release GitHub chứa sing-box.bin, lưu vĩnh viễn
-# vào /etc/storage để không phải tải lại mỗi lần khởi động router.
 download_jq() {
     log "Không tìm thấy jq trên máy -> đang thử tự tải bản build sẵn (${JQ_ASSET_NAME})..."
 
@@ -195,7 +170,7 @@ download_jq() {
         | cut -d'"' -f4 | head -n1)"
 
     if [ -z "$dl_url" ]; then
-        log "Release của ${REPO} chưa có asset ${JQ_ASSET_NAME} -> không tự tải được jq. Hãy cài qua Entware (opkg install jq) hoặc dùng Mode 3 (Custom JSON)."
+        log "Release của ${REPO} chưa có asset ${JQ_ASSET_NAME} -> không tự tải được jq."
         return 1
     fi
 
@@ -213,16 +188,15 @@ download_jq() {
 
     chmod +x "$tmp_jq"
     if ! "$tmp_jq" --version >/dev/null 2>&1; then
-        log "Binary jq tải về không chạy được (có thể sai kiến trúc CPU) -> bỏ"
+        log "Binary jq tải về không chạy được -> bỏ"
         rm -f "$tmp_jq"
         return 1
     fi
 
+    # ĐÃ SỬA: Dời file jq sang /tmp RAM để không tràn Flash
     mv -f "$tmp_jq" "$JQ_STORAGE_PATH"
     chmod +x "$JQ_STORAGE_PATH"
-    # Lưu xuống flash để tồn tại qua reboot, giống cách UI dashboard đang lưu
-    [ -x /sbin/mtd_storage.sh ] && /sbin/mtd_storage.sh save >/dev/null 2>&1
-    log "Đã cài jq vào $JQ_STORAGE_PATH ($size bytes)"
+    log "Đã tải jq vào $JQ_STORAGE_PATH ($size bytes)"
     return 0
 }
 
@@ -264,7 +238,7 @@ EOF
     esac
 }
 
-# ----- Route rules: bypass VN + AdBlock (dùng SRS rule-set chính chủ SagerNet) -----
+# ----- Route rules: bypass VN + AdBlock -----
 build_route_block() {
     bypass_vn="$1"; adblock="$2"; final_tag="$3"
     rulesets=""
@@ -300,9 +274,7 @@ ${rules}    { "ip_is_private": true, "outbound": "direct" }
 EOF
 }
 
-# ----- Tải & gộp TẤT CẢ Sub trong singbox_sub_list thành từng Group (selector) riêng -----
-# Kết quả: mỗi Thư mục trong webui -> 1 selector cùng tên trong dashboard,
-# và 1 selector gốc "select" chứa tất cả group để chọn nhóm trước.
+# ----- Tải & gộp TẤT CẢ Sub trong singbox_sub_list -----
 GROUP_DIR="/tmp/sing-box/groups"
 
 fetch_all_groups() {
@@ -310,7 +282,7 @@ fetch_all_groups() {
     [ -z "$sub_list_json" ] && { log "Chưa có Subscription nào trong singbox_sub_list"; return 1; }
 
     if ! have_jq; then
-        log "CANH BAO: thieu 'jq' tren firmware -> khong the tu dong gop nhom tu Subscription. Hay dung Mode 3 (Custom JSON) hoac cai jq (opkg install jq neu dung Entware)."
+        log "CANH BAO: thieu 'jq' -> khong thể tu dong gop nhom tu Subscription. Hãy cài jq (opkg install jq)."
         return 1
     fi
 
@@ -342,8 +314,6 @@ fetch_all_groups() {
             continue
         fi
 
-        # Lọc proxy thật (bỏ direct/block/dns/selector/urltest) + gắn tiền tố tên nhóm vào tag
-        # để tránh trùng tag giữa các sub khác nhau
         proxies="$("$JQ_BIN" -c --arg pfx "${name} - " '
             [ .outbounds[]
               | select(.type!="direct" and .type!="block" and .type!="dns" and .type!="selector" and .type!="urltest")
@@ -372,7 +342,6 @@ fetch_all_groups() {
     [ "$total_groups" -gt 0 ]
 }
 
-# ----- Sinh config.json đầy đủ cho Mode 0 (Mixed proxy) và Mode 1 (TUN) -----
 generate_config() {
     mode="$1"
     mem_limit="$(nv singbox_mem_limit)"
@@ -392,11 +361,10 @@ generate_config() {
         master_outs="$("$JQ_BIN" -c '. + ["direct"]' "$GROUP_DIR/group_tags.json")"
         selector_block=$("$JQ_BIN" -nc --argjson outs "$master_outs" '{type:"selector", tag:"select", outbounds:$outs}')
         selector_block="    ${selector_block},"
-        # mỗi group-selector + mỗi proxy, đều thêm dấu phẩy cuối dòng
         group_selectors_body="$(sed 's/$/,/' "$GROUP_DIR/all_selectors.jsonl")"
         outbounds_body="$(sed 's/$/,/' "$GROUP_DIR/all_proxies.jsonl")"
     else
-        log "Không gộp được nhóm nào từ Subscription -> chạy tạm ở chế độ Direct (chưa proxy hoá được traffic)"
+        log "Không gộp được nhóm nào từ Subscription -> chạy tạm ở chế độ Direct"
         final_tag="direct"
         selector_block=""
         group_selectors_body=""
@@ -424,13 +392,9 @@ generate_config() {
     } > "$CFG_PATH"
 
     log "Đã sinh config.json (mode=$mode, mem_limit=$mem_limit, bypass_vn=$bypass_vn, adblock=$adblock, dns_mode=$dns_mode, final=$final_tag)"
+    [ -x /sbin/mtd_storage.sh ] && /sbin/mtd_storage.sh save >/dev/null 2>&1
 }
 
-# ----- Cron: tự động cập nhật Sub 3 ngày/lần -----
-# Lưu ý: busybox cru không hỗ trợ "cách N ngày" đáng tin cậy (trường ngày-trong-tháng
-# sẽ lệch chu kỳ qua các tháng), nên ta đặt cron chạy KIỂM TRA mỗi ngày lúc 4h sáng,
-# còn việc có thực sự tải lại hay không do update_sub() tự quyết theo mốc thời gian
-# lưu trong LAST_SUB_UPDATE_FILE (chỉ cập nhật khi đã đủ SUB_UPDATE_INTERVAL giây).
 install_cron() {
     if ! command -v cru >/dev/null 2>&1; then
         log "Không tìm thấy 'cru' trên firmware -> không thể lên lịch tự động cập nhật Sub"
@@ -453,9 +417,6 @@ sync_cron_state() {
     fi
 }
 
-# ----- Cập nhật lại nguồn Subscription -----
-# Gọi thủ công: singbox.sh update_sub force   (bỏ qua chu kỳ 3 ngày, luôn tải lại)
-# Gọi từ cron : singbox.sh update_sub         (chỉ tải lại nếu đã đủ 3 ngày)
 update_sub() {
     force="$1"
     now="$(date +%s 2>/dev/null)"
@@ -483,9 +444,6 @@ update_sub() {
     log "===== Bắt đầu cập nhật nguồn Subscription ($([ "$force" = "force" ] && echo thủ công || echo tự động)) ====="
 
     if is_running; then
-        # restart() sẽ gọi lại ensure_config -> generate_config, và generate_config
-        # gọi fetch_all_groups() tải MỚI từng sub trong singbox_sub_list -> đảm bảo
-        # dùng đúng dữ liệu mới nhất thay vì cache cũ.
         restart
         ok=$?
     else
@@ -524,6 +482,7 @@ ensure_config() {
 }
 EOF
                 log "Generated placeholder config at $CFG_PATH"
+                [ -x /sbin/mtd_storage.sh ] && /sbin/mtd_storage.sh save >/dev/null 2>&1
             fi
             ;;
     esac
@@ -532,7 +491,6 @@ EOF
 install_watchdog() {
     [ ! -f "$WATCHDOG_FILE" ] && return
     sed -Ei "/${LOG_TAG}_watchdog/d" "$WATCHDOG_FILE"
-    # Dùng $0 thay vì cứng đường dẫn /usr/bin/singbox.sh
     cat >> "$WATCHDOG_FILE" <<-EOF
 [ -z "\`pidof sing-box\`" ] && $0 start #${LOG_TAG}_watchdog
 	EOF
@@ -543,10 +501,6 @@ remove_watchdog() {
 }
 
 start() {
-    # Bảo vệ: nếu người dùng đã tắt toggle "Enable sing-box" trên webui nhưng
-    # firmware vẫn gọi restart/start (thường xảy ra vì action Apply luôn kích
-    # hoạt lại service bất kể trạng thái toggle), thì tự chuyển sang stop()
-    # thay vì khởi động lại — đây là nguyên nhân khiến "tắt không được".
     if [ "$(nv singbox_enable)" != "1" ]; then
         log "singbox_enable=0 -> khong khoi dong, chuyen sang stop()"
         stop
@@ -570,7 +524,6 @@ start() {
     ensure_dashboard
     ensure_config
 
-    # TỐI ƯU BỘ NHỚ RAM CHO GO RUNTIME - lấy từ webui (Giới hạn RAM), mặc định 48MiB
     mem_limit="$(nv singbox_mem_limit)"
     [ -z "$mem_limit" ] && mem_limit="48MiB"
     export GOMEMLIMIT="$mem_limit"
@@ -595,17 +548,14 @@ stop() {
     remove_watchdog
     remove_cron
 
-    # Tắt nhẹ nhàng trước (gửi SIGTERM)
     killall sing-box 2>/dev/null
 
-    # Chờ tối đa 5 giây cho tiến trình tự đóng
     tries=0
     while is_running && [ $tries -lt 5 ]; do
         sleep 1
         tries=$((tries + 1))
     done
 
-    # Nếu sau 5 giây vẫn chưa tắt mới ép buộc dùng -9
     if is_running; then
         log "Force killing remaining sing-box process..."
         killall -9 sing-box 2>/dev/null
