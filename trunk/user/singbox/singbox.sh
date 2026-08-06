@@ -27,6 +27,12 @@ REPO="yourname/padavan-KVR"
 GH_API="https://api.github.com/repos/${REPO}/releases/latest"
 ASSET_NAME="sing-box.bin"
 
+# Tên asset jq tĩnh (mipsel) được GitHub Action build kèm và đính vào cùng Release
+# với sing-box.bin. Nếu Release không có asset này (workflow cũ / build lỗi),
+# script sẽ tự báo và bạn vẫn có thể dùng jq cài qua Entware như bình thường.
+JQ_ASSET_NAME="jq-mipsle.bin"
+JQ_STORAGE_PATH="/etc/storage/jq"
+
 log() {
     logger -t "$LOG_TAG" "$1"
 }
@@ -160,15 +166,64 @@ nv() {
 # PATH của tiến trình gọi script (web server/cron) không có /opt/bin
 JQ_BIN=""
 have_jq() {
-    [ -n "$JQ_BIN" ] && return 0
-    for p in /opt/bin/jq /opt/usr/bin/jq /usr/bin/jq /usr/sbin/jq jq; do
+    [ -n "$JQ_BIN" ] && [ -x "$JQ_BIN" ] && return 0
+    for p in "$JQ_STORAGE_PATH" /opt/bin/jq /opt/usr/bin/jq /usr/bin/jq /usr/sbin/jq jq; do
         resolved="$(command -v "$p" 2>/dev/null)"
         if [ -n "$resolved" ]; then
             JQ_BIN="$resolved"
             return 0
         fi
     done
+
+    # Không thấy jq ở đâu cả -> thử tự tải bản tĩnh (mipsel) đã build kèm firmware
+    # từ Release GitHub của bạn (nếu workflow build có bước "Build jq")
+    if download_jq; then
+        JQ_BIN="$JQ_STORAGE_PATH"
+        return 0
+    fi
+
     return 1
+}
+
+# Tự tải jq tĩnh (mipsel) từ cùng Release GitHub chứa sing-box.bin, lưu vĩnh viễn
+# vào /etc/storage để không phải tải lại mỗi lần khởi động router.
+download_jq() {
+    log "Không tìm thấy jq trên máy -> đang thử tự tải bản build sẵn (${JQ_ASSET_NAME})..."
+
+    dl_url="$(curl -sk --connect-timeout 5 "$GH_API" 2>/dev/null \
+        | grep "browser_download_url.*${JQ_ASSET_NAME}" \
+        | cut -d'"' -f4 | head -n1)"
+
+    if [ -z "$dl_url" ]; then
+        log "Release của ${REPO} chưa có asset ${JQ_ASSET_NAME} -> không tự tải được jq. Hãy cài qua Entware (opkg install jq) hoặc dùng Mode 3 (Custom JSON)."
+        return 1
+    fi
+
+    tmp_jq="/tmp/sing-box/jq_tmp"
+    mkdir -p /tmp/sing-box
+    curl -Lksfo "$tmp_jq" --connect-timeout 10 --retry 2 --max-time 60 "$dl_url" \
+        || wget --no-check-certificate -T 20 -t 2 -q -O "$tmp_jq" "$dl_url"
+
+    size="$(wc -c < "$tmp_jq" 2>/dev/null)"
+    if [ -z "$size" ] || [ "$size" -lt 100000 ]; then
+        log "Tải jq thất bại hoặc file quá nhỏ (size=${size:-0} bytes)"
+        rm -f "$tmp_jq"
+        return 1
+    fi
+
+    chmod +x "$tmp_jq"
+    if ! "$tmp_jq" --version >/dev/null 2>&1; then
+        log "Binary jq tải về không chạy được (có thể sai kiến trúc CPU) -> bỏ"
+        rm -f "$tmp_jq"
+        return 1
+    fi
+
+    mv -f "$tmp_jq" "$JQ_STORAGE_PATH"
+    chmod +x "$JQ_STORAGE_PATH"
+    # Lưu xuống flash để tồn tại qua reboot, giống cách UI dashboard đang lưu
+    [ -x /sbin/mtd_storage.sh ] && /sbin/mtd_storage.sh save >/dev/null 2>&1
+    log "Đã cài jq vào $JQ_STORAGE_PATH ($size bytes)"
+    return 0
 }
 
 # ----- Khối DNS theo singbox_dns_mode: 0=Direct 1=FakeIP 2=DoH -----
