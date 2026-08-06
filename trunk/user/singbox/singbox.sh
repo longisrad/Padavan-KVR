@@ -1,6 +1,11 @@
 #!/bin/sh
 # sing-box lifecycle manager for Padavan-KVR (NEWIFI3)
 
+# Bổ sung /opt/bin, /opt/sbin (Entware) vào PATH: khi script được gọi từ
+# web server hoặc cron, PATH thường bị rút gọn và thiếu các thư mục này,
+# khiến 'jq' cài qua opkg không được tìm thấy dù đã cài.
+export PATH="/opt/sbin:/opt/bin:$PATH"
+
 BIN_DIR="/tmp/sing-box"
 BIN_PATH="$BIN_DIR/sing-box"
 CFG_PATH="/etc/storage/singbox.conf"
@@ -151,6 +156,21 @@ nv() {
     nvram get "$1" 2>/dev/null
 }
 
+# Dò tìm jq ở PATH lẫn các vị trí Entware phổ biến, phòng trường hợp
+# PATH của tiến trình gọi script (web server/cron) không có /opt/bin
+JQ_BIN=""
+have_jq() {
+    [ -n "$JQ_BIN" ] && return 0
+    for p in /opt/bin/jq /opt/usr/bin/jq /usr/bin/jq /usr/sbin/jq jq; do
+        resolved="$(command -v "$p" 2>/dev/null)"
+        if [ -n "$resolved" ]; then
+            JQ_BIN="$resolved"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # ----- Khối DNS theo singbox_dns_mode: 0=Direct 1=FakeIP 2=DoH -----
 build_dns_block() {
     case "$1" in
@@ -234,12 +254,12 @@ fetch_all_groups() {
     sub_list_json="$(nv singbox_sub_list)"
     [ -z "$sub_list_json" ] && { log "Chưa có Subscription nào trong singbox_sub_list"; return 1; }
 
-    if ! command -v jq >/dev/null 2>&1; then
-        log "CANH BAO: thieu 'jq' tren firmware -> khong the tu dong gop nhom tu Subscription. Hay dung Mode 3 (Custom JSON) hoac cai jq."
+    if ! have_jq; then
+        log "CANH BAO: thieu 'jq' tren firmware -> khong the tu dong gop nhom tu Subscription. Hay dung Mode 3 (Custom JSON) hoac cai jq (opkg install jq neu dung Entware)."
         return 1
     fi
 
-    count="$(echo "$sub_list_json" | jq 'length' 2>/dev/null)"
+    count="$(echo "$sub_list_json" | "$JQ_BIN" 'length' 2>/dev/null)"
     case "$count" in ''|*[!0-9]*) log "singbox_sub_list không hợp lệ"; return 1 ;; esac
     [ "$count" -gt 0 ] || { log "Danh sách sub rỗng"; return 1; }
 
@@ -250,9 +270,9 @@ fetch_all_groups() {
 
     i=0
     while [ "$i" -lt "$count" ]; do
-        entry="$(echo "$sub_list_json" | jq -c ".[$i]")"
-        name="$(echo "$entry" | jq -r '.name // empty')"
-        url="$(echo "$entry" | jq -r '.url // empty')"
+        entry="$(echo "$sub_list_json" | "$JQ_BIN" -c ".[$i]")"
+        name="$(echo "$entry" | "$JQ_BIN" -r '.name // empty')"
+        url="$(echo "$entry" | "$JQ_BIN" -r '.url // empty')"
         i=$((i + 1))
         [ -z "$name" ] && name="Group $i"
         [ -z "$url" ] && { log "Bỏ qua Sub #$i vì thiếu URL"; continue; }
@@ -262,37 +282,37 @@ fetch_all_groups() {
         curl -Lksfo "$cache" --connect-timeout 10 --max-time 30 "$url" \
             || wget --no-check-certificate -T 15 -q -O "$cache" "$url"
 
-        if ! jq -e '.outbounds' "$cache" >/dev/null 2>&1; then
+        if ! "$JQ_BIN" -e '.outbounds' "$cache" >/dev/null 2>&1; then
             log "Sub '$name' không phải định dạng sing-box JSON hợp lệ (thiếu outbounds[]) -> bỏ qua"
             continue
         fi
 
         # Lọc proxy thật (bỏ direct/block/dns/selector/urltest) + gắn tiền tố tên nhóm vào tag
         # để tránh trùng tag giữa các sub khác nhau
-        proxies="$(jq -c --arg pfx "${name} - " '
+        proxies="$("$JQ_BIN" -c --arg pfx "${name} - " '
             [ .outbounds[]
               | select(.type!="direct" and .type!="block" and .type!="dns" and .type!="selector" and .type!="urltest")
               | .tag = ($pfx + .tag) ]' "$cache" 2>/dev/null)"
         [ -z "$proxies" ] && proxies="[]"
 
-        pcount="$(echo "$proxies" | jq 'length' 2>/dev/null)"
+        pcount="$(echo "$proxies" | "$JQ_BIN" 'length' 2>/dev/null)"
         case "$pcount" in ''|*[!0-9]*) pcount=0 ;; esac
         if [ "$pcount" -le 0 ]; then
             log "Sub '$name' không có proxy nào -> bỏ qua"
             continue
         fi
 
-        echo "$proxies" | jq -c '.[]' >> "$GROUP_DIR/all_proxies.jsonl"
+        echo "$proxies" | "$JQ_BIN" -c '.[]' >> "$GROUP_DIR/all_proxies.jsonl"
 
-        group_outs="$(echo "$proxies" | jq -c '[.[].tag] + ["direct"]')"
-        jq -nc --arg tag "$name" --argjson outs "$group_outs" \
+        group_outs="$(echo "$proxies" | "$JQ_BIN" -c '[.[].tag] + ["direct"]')"
+        "$JQ_BIN" -nc --arg tag "$name" --argjson outs "$group_outs" \
             '{type:"selector", tag:$tag, outbounds:$outs}' >> "$GROUP_DIR/all_selectors.jsonl"
 
-        jq -c --arg t "$name" '. + [$t]' "$GROUP_DIR/group_tags.json" > "$GROUP_DIR/group_tags.json.tmp" \
+        "$JQ_BIN" -c --arg t "$name" '. + [$t]' "$GROUP_DIR/group_tags.json" > "$GROUP_DIR/group_tags.json.tmp" \
             && mv "$GROUP_DIR/group_tags.json.tmp" "$GROUP_DIR/group_tags.json"
     done
 
-    total_groups="$(jq 'length' "$GROUP_DIR/group_tags.json" 2>/dev/null)"
+    total_groups="$("$JQ_BIN" 'length' "$GROUP_DIR/group_tags.json" 2>/dev/null)"
     case "$total_groups" in ''|*[!0-9]*) total_groups=0 ;; esac
     [ "$total_groups" -gt 0 ]
 }
@@ -314,8 +334,8 @@ generate_config() {
 
     if fetch_all_groups; then
         final_tag="select"
-        master_outs="$(jq -c '. + ["direct"]' "$GROUP_DIR/group_tags.json")"
-        selector_block=$(jq -nc --argjson outs "$master_outs" '{type:"selector", tag:"select", outbounds:$outs}')
+        master_outs="$("$JQ_BIN" -c '. + ["direct"]' "$GROUP_DIR/group_tags.json")"
+        selector_block=$("$JQ_BIN" -nc --argjson outs "$master_outs" '{type:"selector", tag:"select", outbounds:$outs}')
         selector_block="    ${selector_block},"
         # mỗi group-selector + mỗi proxy, đều thêm dấu phẩy cuối dòng
         group_selectors_body="$(sed 's/$/,/' "$GROUP_DIR/all_selectors.jsonl")"
@@ -468,6 +488,16 @@ remove_watchdog() {
 }
 
 start() {
+    # Bảo vệ: nếu người dùng đã tắt toggle "Enable sing-box" trên webui nhưng
+    # firmware vẫn gọi restart/start (thường xảy ra vì action Apply luôn kích
+    # hoạt lại service bất kể trạng thái toggle), thì tự chuyển sang stop()
+    # thay vì khởi động lại — đây là nguyên nhân khiến "tắt không được".
+    if [ "$(nv singbox_enable)" != "1" ]; then
+        log "singbox_enable=0 -> khong khoi dong, chuyen sang stop()"
+        stop
+        return 0
+    fi
+
     if is_running; then
         log "Already running, skip"
         return 0
