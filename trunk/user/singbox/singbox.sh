@@ -1,7 +1,6 @@
 #!/bin/sh
 # sing-box lifecycle manager for Padavan-KVR (NEWIFI3)
 
-# Bổ sung /opt/bin, /opt/sbin (Entware) vào PATH
 export PATH="/opt/sbin:/opt/bin:$PATH"
 
 BIN_DIR="/tmp/sing-box"
@@ -14,19 +13,15 @@ WATCHDOG_FILE="/tmp/script/_opt_script_check"
 RULESET_DIR="/tmp/sing-box/rule-set"
 SUB_CACHE="/tmp/sing-box/sub_raw.json"
 
-# Cập nhật Subscription: file lưu mốc thời gian lần cập nhật gần nhất
 LAST_SUB_UPDATE_FILE="/etc/storage/singbox_last_sub_update"
 SUB_UPDATE_INTERVAL=259200
 CRON_TAG="singbox_autoupdate"
 
-# Giữ nguyên REPO của bạn
 REPO="longisrad/Padavan-KVR"
 GH_API="https://api.github.com/repos/${REPO}/releases/latest"
-ASSET_NAME="sing-box-miple.bin"
+ASSET_NAME="sing-box-mipsle.bin"
 
-# Tên asset jq tĩnh (mipsel)
 JQ_ASSET_NAME="jq-mipsle.bin"
-# ĐÃ SỬA: Đổi vị trí lưu jq sang /tmp RAM để KHÔNG làm tràn Flash /etc/storage
 JQ_STORAGE_PATH="/tmp/sing-box/jq"
 
 log() {
@@ -37,7 +32,6 @@ is_running() {
     [ -n "$(pidof sing-box)" ]
 }
 
-# Tự động cắt ngắn log nếu vượt quá 300KB để tránh tràn RAM /tmp
 rotate_log() {
     if [ -f "$LOG_FILE" ]; then
         size="$(wc -c < "$LOG_FILE" 2>/dev/null)"
@@ -84,9 +78,21 @@ download_binary() {
 }
 
 ensure_binary() {
-    if [ -x "$BIN_PATH" ] && "$BIN_PATH" version >/dev/null 2>&1 ; then
-        return 0
+    for p in /usr/bin/sing-box /usr/sbin/sing-box /opt/bin/sing-box; do
+        if [ -x "$p" ] && "$p" version >/dev/null 2>&1; then
+            BIN_PATH="$p"
+            return 0
+        fi
+    done
+
+    BIN_PATH="/tmp/sing-box/sing-box"
+    if [ -f "$BIN_PATH" ]; then
+        chmod +x "$BIN_PATH"
+        if "$BIN_PATH" version >/dev/null 2>&1; then
+            return 0
+        fi
     fi
+
     rm -f "$BIN_PATH"
     download_binary
 }
@@ -95,17 +101,13 @@ UI_DIR="/tmp/sing-box/ui"
 UI_URL="https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip"
 
 ensure_dashboard() {
-    # ĐÃ SỬA: Xóa bỏ file nén UI cũ trong /etc/storage nếu có để giải phóng bộ nhớ Flash bị tràn
     if [ -f "/etc/storage/singbox_ui.tar.gz" ]; then
-        log "Cleaning up old UI archive from /etc/storage to free up Flash storage..."
+        log "Cleaning up old UI archive from /etc/storage..."
         rm -f "/etc/storage/singbox_ui.tar.gz"
-        [ -x /sbin/mtd_storage.sh ] && /sbin/mtd_storage.sh save >/dev/null 2>&1
     fi
 
-    # 1. Đã có trong /tmp RAM -> Bỏ qua
     [ -f "$UI_DIR/index.html" ] && return 0
 
-    # 2. Tải trực tiếp Dashboard về /tmp RAM
     log "Downloading Clash-compatible dashboard (metacubexd)..."
     mkdir -p "$UI_DIR"
     tmp_zip="/tmp/sing-box/ui.zip"
@@ -145,6 +147,10 @@ nv() {
 
 JQ_BIN=""
 have_jq() {
+    if [ -f "/etc/storage/jq" ]; then
+        rm -f "/etc/storage/jq"
+    fi
+
     [ -n "$JQ_BIN" ] && [ -x "$JQ_BIN" ] && return 0
     for p in "$JQ_STORAGE_PATH" /opt/bin/jq /opt/usr/bin/jq /usr/bin/jq /usr/sbin/jq jq; do
         resolved="$(command -v "$p" 2>/dev/null)"
@@ -174,8 +180,8 @@ download_jq() {
         return 1
     fi
 
-    tmp_jq="/tmp/sing-box/jq_tmp"
     mkdir -p /tmp/sing-box
+    tmp_jq="/tmp/sing-box/jq"
     curl -Lksfo "$tmp_jq" --connect-timeout 10 --retry 2 --max-time 60 "$dl_url" \
         || wget --no-check-certificate -T 20 -t 2 -q -O "$tmp_jq" "$dl_url"
 
@@ -193,24 +199,20 @@ download_jq() {
         return 1
     fi
 
-    # ĐÃ SỬA: Dời file jq sang /tmp RAM để không tràn Flash
-    mv -f "$tmp_jq" "$JQ_STORAGE_PATH"
-    chmod +x "$JQ_STORAGE_PATH"
     log "Đã tải jq vào $JQ_STORAGE_PATH ($size bytes)"
     return 0
 }
 
-# ----- Khối DNS theo singbox_dns_mode: 0=Direct 1=FakeIP 2=DoH -----
+# ĐÃ SỬA: Loại bỏ "detour": "direct" để tương thích với sing-box v1.13+
 build_dns_block() {
     case "$1" in
         1)
             cat <<-EOF
   "dns": {
     "servers": [
-      { "tag": "dns-remote", "address": "tls://8.8.8.8", "detour": "direct" },
-      { "tag": "dns-fakeip", "address": "fakeip" }
+      { "tag": "dns-remote", "type": "tls", "server": "8.8.8.8" },
+      { "tag": "dns-fakeip", "type": "fakeip", "inet4_range": "198.18.0.0/15" }
     ],
-    "fakeip": { "enabled": true, "inet4_range": "198.18.0.0/15" },
     "rules": [ { "query_type": ["A","AAAA"], "server": "dns-fakeip" } ],
     "independent_cache": true
   },
@@ -220,8 +222,8 @@ EOF
             cat <<-EOF
   "dns": {
     "servers": [
-      { "tag": "dns-remote", "address": "https://1.1.1.1/dns-query", "detour": "direct" },
-      { "tag": "dns-direct", "address": "https://dns.google/dns-query", "detour": "direct" }
+      { "tag": "dns-remote", "type": "https", "server": "dns.cloudflare.com" },
+      { "tag": "dns-direct", "type": "https", "server": "dns.google" }
     ],
     "independent_cache": true
   },
@@ -230,7 +232,7 @@ EOF
         *)
             cat <<-EOF
   "dns": {
-    "servers": [ { "tag": "dns-direct", "address": "8.8.8.8", "detour": "direct" } ],
+    "servers": [ { "tag": "dns-direct", "type": "udp", "server": "8.8.8.8" } ],
     "independent_cache": true
   },
 EOF
@@ -238,7 +240,6 @@ EOF
     esac
 }
 
-# ----- Route rules: bypass VN + AdBlock -----
 build_route_block() {
     bypass_vn="$1"; adblock="$2"; final_tag="$3"
     rulesets=""
@@ -274,7 +275,6 @@ ${rules}    { "ip_is_private": true, "outbound": "direct" }
 EOF
 }
 
-# ----- Tải & gộp TẤT CẢ Sub trong singbox_sub_list -----
 GROUP_DIR="/tmp/sing-box/groups"
 
 fetch_all_groups() {
@@ -282,7 +282,7 @@ fetch_all_groups() {
     [ -z "$sub_list_json" ] && { log "Chưa có Subscription nào trong singbox_sub_list"; return 1; }
 
     if ! have_jq; then
-        log "CANH BAO: thieu 'jq' -> khong thể tu dong gop nhom tu Subscription. Hãy cài jq (opkg install jq)."
+        log "CANH BAO: thieu 'jq' -> khong the tu dong gop nhom tu Subscription."
         return 1
     fi
 
@@ -346,14 +346,21 @@ generate_config() {
     mode="$1"
     mem_limit="$(nv singbox_mem_limit)"
     [ -z "$mem_limit" ] && mem_limit="48MiB"
+    
     bypass_vn="$(nv singbox_bypass_vn)"
+    [ -z "$bypass_vn" ] && bypass_vn="1"
+    
     adblock="$(nv singbox_adblock)"
+    [ -z "$adblock" ] && adblock="1"
+    
     dns_mode="$(nv singbox_dns_mode)"
+    [ -z "$dns_mode" ] && dns_mode="1"
 
+    # ĐÃ SỬA: Loại bỏ các trường legacy "sniff": true
     if [ "$mode" = "0" ]; then
         inbound_block='  "inbounds": [ { "type": "mixed", "tag": "mixed-in", "listen": "0.0.0.0", "listen_port": 7890 } ],'
     else
-        inbound_block='  "inbounds": [ { "type": "tun", "tag": "tun-in", "interface_name": "singbox0", "address": ["172.19.0.1/30"], "mtu": 1500, "auto_route": true, "strict_route": true, "stack": "system", "sniff": true } ],'
+        inbound_block='  "inbounds": [ { "type": "tun", "tag": "tun-in", "interface_name": "singbox0", "address": ["172.19.0.1/30"], "mtu": 1500, "auto_route": true, "stack": "system" } ],'
     fi
 
     if fetch_all_groups; then
@@ -371,11 +378,12 @@ generate_config() {
         outbounds_body=""
     fi
 
+    # ĐÃ SỬA: secret = "" để Dashboard mở mượt mà
     {
         echo "{"
         echo "  \"log\": { \"level\": \"info\", \"timestamp\": true },"
         echo "  \"experimental\": {"
-        echo "    \"clash_api\": { \"external_controller\": \"0.0.0.0:9090\", \"external_ui\": \"${UI_DIR}\", \"secret\": \"admin\" },"
+        echo "    \"clash_api\": { \"external_controller\": \"0.0.0.0:9090\", \"external_ui\": \"${UI_DIR}\", \"secret\": \"\" },"
         echo "    \"cache_file\": { \"enabled\": true, \"path\": \"/tmp/sing-box/cache.db\" }"
         echo "  },"
         echo "$inbound_block"
@@ -401,7 +409,7 @@ install_cron() {
     fi
     cru d "$CRON_TAG" >/dev/null 2>&1
     cru a "$CRON_TAG" "0 4 * * * /usr/bin/singbox.sh update_sub"
-    log "Đã bật lịch tự động kiểm tra/cập nhật Sub (mỗi ngày 4h sáng, thực thi thật sự mỗi 3 ngày)"
+    log "Đã bật lịch tự động kiểm tra/cập nhật Sub"
 }
 
 remove_cron() {
@@ -435,7 +443,7 @@ update_sub() {
     case "$sb_mode" in
         0|1) ;;
         *)
-            log "update_sub: chỉ hỗ trợ tự động gộp Sub ở Mode 1/2 (Mixed/TUN) - Mode 3 dùng JSON tùy chỉnh nên bỏ qua"
+            log "update_sub: chỉ hỗ trợ tự động gộp Sub ở Mode 1/2 - Mode 3 dùng JSON tùy chỉnh nên bỏ qua"
             return 1
             ;;
     esac
@@ -455,7 +463,7 @@ update_sub() {
         echo "$now" > "$LAST_SUB_UPDATE_FILE"
         log "===== Cập nhật Subscription hoàn tất ====="
     else
-        log "===== Cập nhật Subscription THẤT BẠI (restart lỗi) - giữ nguyên mốc thời gian cũ để thử lại lần sau ====="
+        log "===== Cập nhật Subscription THẤT BẠI - giữ nguyên mốc thời gian cũ để thử lại ====="
     fi
     return "$ok"
 }
@@ -488,14 +496,14 @@ EOF
 
 install_watchdog() {
     [ ! -f "$WATCHDOG_FILE" ] && return
-    sed -Ei "/${LOG_TAG}_watchdog/d" "$WATCHDOG_FILE"
+    sed -i '/sing-box/d' "$WATCHDOG_FILE" 2>/dev/null
     cat >> "$WATCHDOG_FILE" <<-EOF
-[ -z "\`pidof sing-box\`" ] && $0 start #${LOG_TAG}_watchdog
+[ -z "\`pidof sing-box\`" ] && $0 start #sing-box_watchdog
 	EOF
 }
 
 remove_watchdog() {
-    [ -f "$WATCHDOG_FILE" ] && sed -Ei "/${LOG_TAG}_watchdog/d" "$WATCHDOG_FILE"
+    [ -f "$WATCHDOG_FILE" ] && sed -i '/sing-box/d' "$WATCHDOG_FILE" 2>/dev/null
 }
 
 start() {
