@@ -142,7 +142,7 @@ install_watchdog() {
     [ ! -f "$WATCHDOG_FILE" ] && return
     sed -Ei "/${LOG_TAG}_watchdog/d" "$WATCHDOG_FILE"
     cat >> "$WATCHDOG_FILE" <<-EOF
-[ -z "\`pidof AdGuardHome\`" ] && /usr/bin/adguardhome.sh start #${LOG_TAG}_watchdog
+[ -z "\`pidof AdGuardHome\`" ] && $0 start #${LOG_TAG}_watchdog
 	EOF
 }
 
@@ -200,8 +200,16 @@ start() {
 
     [ ! -s "$CFG_PATH" ] && generate_default_config
 
+    mode="$(nvram get adg_redirect)"
     port="$(target_port)"
     set_agh_port "$port"
+
+    # FIX CONFLICT MODE 2: Bắt dnsmasq nhả Cổng 53 TRƯỚC khi bật AdGuardHome
+    if [ "$mode" = "2" ]; then
+        log "Mode 2 detected: freeing port 53 from dnsmasq first..."
+        dnsmasq_takeover_add
+        sleep 1
+    fi
 
     # TỐI ƯU BỘ NHỚ RAM CHO GO RUNTIME (Rất quan trọng cho AdGuard Home)
     export GOMEMLIMIT=64MiB
@@ -212,14 +220,16 @@ start() {
     sleep 3
     if ! is_running; then
         log "Process exited immediately after start, check binary/config"
+        [ "$mode" = "2" ] && dnsmasq_restore_default
         return 1
     fi
     log "Process started (PID $(pidof AdGuardHome)), listening on port $port"
 
     if wait_for_port "$port"; then
-        apply_redirect_mode
+        [ "$mode" != "2" ] && apply_redirect_mode
     else
-        log "WARNING: AGH did not open port $port in time, dnsmasq settings not changed"
+        log "WARNING: AGH did not open port $port in time"
+        [ "$mode" = "2" ] && dnsmasq_restore_default
     fi
 
     install_watchdog
@@ -230,12 +240,23 @@ stop() {
     log "Stopping..."
     remove_watchdog
     dnsmasq_restore_default
-    killall -9 AdGuardHome 2>/dev/null
+
+    # Tắt nhẹ nhàng trước (gửi SIGTERM để AGH kịp lưu config/log)
+    killall AdGuardHome 2>/dev/null
+
+    # Chờ tối đa 5 giây cho tiến trình tự đóng
     tries=0
-    while [ -n "$(pidof AdGuardHome)" ] && [ $tries -lt 10 ]; do
+    while is_running && [ $tries -lt 5 ]; do
         sleep 1
         tries=$((tries + 1))
     done
+
+    # Nếu sau 5 giây chưa tắt mới ép buộc dùng -9
+    if is_running; then
+        log "Force killing remaining AdGuardHome process..."
+        killall -9 AdGuardHome 2>/dev/null
+    fi
+
     log "Stopped"
 }
 
