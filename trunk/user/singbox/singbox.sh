@@ -9,7 +9,7 @@ LOG_FILE="/tmp/sing-box.log"
 LOG_TAG="sing-box"
 WATCHDOG_FILE="/tmp/script/_opt_script_check"
 
-# THAY ĐỔI TÊN REPO CỦA BẠN TẠI ĐÂY
+# Giữ nguyên REPO của bạn
 REPO="yourname/padavan-KVR"
 GH_API="https://api.github.com/repos/${REPO}/releases/latest"
 ASSET_NAME="sing-box.bin"
@@ -58,7 +58,7 @@ download_binary() {
     fi
 
     chmod +x "$BIN_PATH"
-    if [ "$("$BIN_PATH" version 2>&1 | wc -l)" -lt 1 ]; then
+    if ! "$BIN_PATH" version >/dev/null 2>&1 ; then
         log "Downloaded binary failed sanity check"
         rm -f "$BIN_PATH"
         return 1
@@ -69,7 +69,7 @@ download_binary() {
 }
 
 ensure_binary() {
-    if [ -x "$BIN_PATH" ] && [ "$("$BIN_PATH" version 2>&1 | wc -l)" -ge 1 ]; then
+    if [ -x "$BIN_PATH" ] && "$BIN_PATH" version >/dev/null 2>&1 ; then
         return 0
     fi
     rm -f "$BIN_PATH"
@@ -77,12 +77,28 @@ ensure_binary() {
 }
 
 UI_DIR="/tmp/sing-box/ui"
+UI_STORAGE_ARCHIVE="/etc/storage/singbox_ui.tar.gz"
 UI_URL="https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip"
 
 ensure_dashboard() {
+    # 1. Đã có trong /tmp RAM -> Bỏ qua
     [ -f "$UI_DIR/index.html" ] && return 0
 
-    log "Downloading Clash-compatible dashboard (metacubexd)..."
+    # 2. Khôi phục từ Bộ nhớ cứng (/etc/storage) nếu đã lưu trước đó
+    if [ -f "$UI_STORAGE_ARCHIVE" ]; then
+        log "Restoring dashboard UI from persistent storage (/etc/storage)..."
+        mkdir -p "$UI_DIR"
+        tar -xzf "$UI_STORAGE_ARCHIVE" -C "$UI_DIR" 2>/dev/null
+        if [ -f "$UI_DIR/index.html" ]; then
+            log "Dashboard restored successfully from storage!"
+            return 0
+        fi
+        log "Stored dashboard archive corrupt, re-downloading..."
+        rm -f "$UI_STORAGE_ARCHIVE"
+    fi
+
+    # 3. Nếu chưa từng có -> Tải lần đầu tiên từ GitHub
+    log "Downloading Clash-compatible dashboard (metacubexd) for the first time..."
     mkdir -p "$UI_DIR"
     tmp_zip="/tmp/sing-box/ui.zip"
 
@@ -110,6 +126,14 @@ ensure_dashboard() {
 
     mv "$extracted_dir"/* "$UI_DIR"/
     rm -rf /tmp/sing-box/_uiextract
+
+    # 4. Lưu bản nén vào bộ nhớ cứng Flash (/etc/storage) để các lần sau dùng lại
+    if [ -f "$UI_DIR/index.html" ]; then
+        log "Saving dashboard UI to persistent storage (/etc/storage)..."
+        tar -czf "$UI_STORAGE_ARCHIVE" -C "$UI_DIR" . 2>/dev/null
+        [ -x /sbin/mtd_storage.sh ] && /sbin/mtd_storage.sh save >/dev/null 2>&1
+    fi
+
     log "Dashboard ready at $UI_DIR"
     return 0
 }
@@ -146,8 +170,9 @@ EOF
 install_watchdog() {
     [ ! -f "$WATCHDOG_FILE" ] && return
     sed -Ei "/${LOG_TAG}_watchdog/d" "$WATCHDOG_FILE"
+    # Dùng $0 thay vì cứng đường dẫn /usr/bin/singbox.sh
     cat >> "$WATCHDOG_FILE" <<-EOF
-[ -z "\`pidof sing-box\`" ] && /usr/bin/singbox.sh start #${LOG_TAG}_watchdog
+[ -z "\`pidof sing-box\`" ] && $0 start #${LOG_TAG}_watchdog
 	EOF
 }
 
@@ -173,7 +198,7 @@ start() {
     ensure_dashboard
     ensure_config
 
-    # THÊM TỐI ƯU BỘ NHỚ RAM CHO GO RUNTIME (Rất quan trọng cho Router 512MB/256MB RAM)
+    # TỐI ƯU BỘ NHỚ RAM CHO GO RUNTIME (Rất quan trọng cho Router 512MB/256MB RAM)
     export GOMEMLIMIT=64MiB
     export GOGC=30
 
@@ -193,12 +218,23 @@ start() {
 stop() {
     log "Stopping..."
     remove_watchdog
-    killall -9 sing-box 2>/dev/null
+
+    # Tắt nhẹ nhàng trước (gửi SIGTERM)
+    killall sing-box 2>/dev/null
+
+    # Chờ tối đa 5 giây cho tiến trình tự đóng
     tries=0
-    while [ -n "$(pidof sing-box)" ] && [ $tries -lt 10 ]; do
+    while is_running && [ $tries -lt 5 ]; do
         sleep 1
         tries=$((tries + 1))
     done
+
+    # Nếu sau 5 giây vẫn chưa tắt mới ép buộc dùng -9
+    if is_running; then
+        log "Force killing remaining sing-box process..."
+        killall -9 sing-box 2>/dev/null
+    fi
+
     log "Stopped"
 }
 
