@@ -14,6 +14,10 @@ ts_key=$(nvram get tailscale_key)
 ts_reset="$(nvram get tailscale_reset)"
 tailscaled="$(nvram get tailscale_bin)"
 [ -z "$tailscaled" ] && tailscaled=/tmp/tailscaled && nvram set tailscale_bin=$tailscaled
+
+# Khai báo biến tailscale ở phạm vi toàn cục
+tailscale="$(dirname "$tailscaled")/tailscale"
+
 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
 t_CMD="$(nvram get tailscale_cmd)"
@@ -24,9 +28,9 @@ tailscale_renum=`nvram get tailscale_renum`
 
 BUNDLED_TS_BIN="/etc/tailscaled.bin"
 
-# Hàm kiểm tra dung lượng bộ nhớ RAM còn trống chuẩn Linux
+# Hàm kiểm tra dung lượng bộ nhớ RAM khả dụng chuẩn Linux (/proc/meminfo)
 get_free_ram_mb() {
-	df -m /tmp 2>/dev/null | awk 'NR==2 {print $4}'
+	awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || awk '/MemFree/ {print int($2/1024)}' /proc/meminfo
 }
 
 extract_bundled_ts() {
@@ -36,7 +40,7 @@ extract_bundled_ts() {
 		logger -t "【Tailscale】" "Found bundled tailscaled in firmware, copying to RAM..."
 		cp "$BUNDLED_TS_BIN" "$tailscaled"
 		chmod +x "$tailscaled"
-		if [ "$($tailscaled -h 2>&1 | wc -l)" -gt 3 ] ; then
+		if "$tailscaled" version >/dev/null 2>&1 ; then
 			logger -t "【Tailscale】" "Bundled tailscaled extracted successfully"
 			return 0
 		else
@@ -107,13 +111,13 @@ dowload_ts() {
 	logger -t "【Tailscale】" "Starting download https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full to $tailscaled"
 	
 	tailscaled_size0="$(get_free_ram_mb)"
-	logger -t "【Tailscale】" "Free space at RAM (/tmp): ${tailscaled_size0}M"
+	logger -t "【Tailscale】" "Free RAM space: ${tailscaled_size0}M"
 	
 	curl -Lko "$tailscaled" --connect-timeout 10 --retry 2 --max-time 90 "https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full" || wget --no-check-certificate -T 15 -t 2 -O "$tailscaled" "https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full"
 	
 	if [ "$?" = 0 ] ; then
 		chmod +x $tailscaled
-		if [ "$($tailscaled -h 2>&1 | wc -l)" -gt 3 ] ; then
+		if "$tailscaled" version >/dev/null 2>&1 ; then
 			logger -t "【Tailscale】" "$tailscaled downloaded successfully"
 			ts_ver=$($tailscaled -version | sed -n 1p | awk -F '-' '{print $1}')
 			if [ -z "$ts_ver" ] ; then
@@ -220,19 +224,29 @@ start_ts() {
 	fi 
 	logger -t "Tailscale" "Starting tailscale"
 	sed -Ei '/【Tailscaled】|^$/d' /tmp/script/_opt_script_check
+
+	# 1. Thử giải nén từ Firmware nếu chưa có file
 	[ ! -f "$tailscaled" ] && extract_bundled_ts
-	get_tag
-	if [ -f "$tailscaled" ] ; then
-		[ ! -x "$tailscaled" ] && chmod +x $tailscaled
-		[ "$($tailscaled -h 2>&1 | wc -l)" -lt 2 ] && logger -t "【Tailscale】" "Program ${tailscaled} is incomplete!" && rm -rf $tailscaled
-	fi
+
+	# 2. Nếu vẫn chưa có file, MỚI gọi GitHub API để tải về
 	if [ ! -f "$tailscaled" ] ; then
-		logger -t "【Tailscale】" "Main program ${tailscaled} not found, starting download..."
+		logger -t "【Tailscale】" "Main program ${tailscaled} not found, fetching latest release..."
+		get_tag
 		[ -z "$tag" ] && tag="1.78.1"
-		dowload_ts $tag
+		dowload_ts "$tag"
 	fi
+
+	# 3. Kiểm tra tính hợp lệ của file binary
+	if [ -f "$tailscaled" ] ; then
+		[ ! -x "$tailscaled" ] && chmod +x "$tailscaled"
+		if ! "$tailscaled" version >/dev/null 2>&1 ; then
+			logger -t "【Tailscale】" "Program ${tailscaled} is corrupt or incomplete!"
+			rm -rf "$tailscaled"
+		fi
+	fi
+
 	kill_ts
-	[ ! -x "$tailscaled" ] && chmod +x $tailscaled
+	[ ! -x "$tailscaled" ] && chmod +x "$tailscaled"
 	path=$(dirname "$tailscaled")
 	tailscale="${path}/tailscale"
 	if [ ! -L "$tailscale" ] || [ "$(ls -l $tailscale | awk '{print $NF}')" != "$tailscaled" ] ; then
@@ -243,7 +257,7 @@ start_ts() {
 	tdCMD="$tailscaled --state=/etc/storage/tailscale/lib/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock"
 	logger -t "【Tailscale】" "Running main program $tdCMD"
 	
-	# Ép Go Runtime giải phóng bộ nhớ
+	# Ép Go Runtime giải phóng bộ nhớ (Cực kỳ quan trọng cho RAM 512MB/256MB)
 	export GOMEMLIMIT=48MiB
 	export GOGC=25
 	
@@ -319,6 +333,7 @@ stop_ts() {
 	logger -t "【Tailscale】" "Stopping tailscale..."
 	sed -Ei '/【Tailscaled】|^$/d' /tmp/script/_opt_script_check
 	kill_ts
+	iptables -D INPUT -i tailscale0 -j ACCEPT 2>/dev/null
 	[ -z "$(pidof tailscaled)" ] && logger -t "【Tailscale】" "tailscale stopped successfully!"
 }
 
