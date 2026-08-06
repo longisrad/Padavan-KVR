@@ -20,9 +20,9 @@ SUB_UPDATE_INTERVAL=259200
 CRON_TAG="singbox_autoupdate"
 
 # Giữ nguyên REPO của bạn
-REPO="yourname/padavan-KVR"
+REPO="longisrad/Padavan-KVR"
 GH_API="https://api.github.com/repos/${REPO}/releases/latest"
-ASSET_NAME="sing-box.bin"
+ASSET_NAME="sing-box-miple.bin"
 
 # Tên asset jq tĩnh (mipsel)
 JQ_ASSET_NAME="jq-mipsle.bin"
