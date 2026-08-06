@@ -82,6 +82,34 @@ function loadFromUrl(){
 	});
 }
 
+/* Nút kiểm tra Link Subscription hợp lệ */
+function checkSubUrl(){
+	var url = $j('#singbox_sub_url').val().trim();
+	var status = $j('#sub_url_status');
+	if(!url){ 
+		status.html('<span style="color:#d9534f;">Vui lòng nhập URL trước!</span>'); 
+		return; 
+	}
+	status.html('<span style="color:#f0ad4e;">Đang kiểm tra kết nối...</span>');
+	$j.ajax({
+		url: url,
+		type: 'GET',
+		timeout: 8000,
+		success: function(data, textStatus, xhr){
+			var size = data ? data.length : 0;
+			if(size > 100){
+				status.html('<span style="color:#5cb85c;">✅ Link hợp lệ! (HTTP 200 - Dung lượng: ' + Math.round(size/1024) + ' KB)</span>');
+			} else {
+				status.html('<span style="color:#d9534f;">❌ Dữ liệu trả về quá nhỏ hoặc rỗng</span>');
+			}
+		},
+		error: function(xhr){
+			var code = xhr.status ? xhr.status : 'Timeout/CORS';
+			status.html('<span style="color:#d9534f;">❌ Kết nối thất bại (Mã lỗi: ' + code + ')</span>');
+		}
+	});
+}
+
 function openDashboard(){
 	var ip = "<% nvram_get_x("","lan_ipaddr"); %>";
 	window.open("http://" + ip + ":9090/ui", "_blank");
@@ -145,8 +173,9 @@ function clearLog(){
 		<a class="btn btn-success" style="width:260px; font-size:15px;" href="javascript:void(0);" onclick="openDashboard();">Open sing-box Dashboard</a>
 	</div>
 
+	<!-- BẢNG 1: ĐIỀU KHIỂN CƠ BẢN -->
 	<table width="100%" cellpadding="4" cellspacing="0" class="table">
-	<tr><th colspan="2" style="background-color:#756c78;">Control</th></tr>
+	<tr><th colspan="2" style="background-color:#756c78;">Basic Control</th></tr>
 	<tr>
 		<th width="30%">Enable sing-box</th>
 		<td>
@@ -157,16 +186,85 @@ function clearLog(){
 		</td>
 	</tr>
 	<tr>
-		<th width="30%">Local Proxy Port</th>
+		<th>Running Mode</th>
 		<td>
-			<span style="color:#888;">Set inside the config JSON below (default 7890, mixed HTTP+SOCKS)</span>
+			<select name="singbox_mode" class="input">
+				<option value="0" <% nvram_match_x("","singbox_mode","0","selected"); %>>Mode 1: Proxy Mode (Mixed Port 7890 - Chỉnh tay từng máy)</option>
+				<option value="1" <% nvram_match_x("","singbox_mode","1","selected"); %>>Mode 2: TUN Mode (Toàn mạng LAN qua VPN tự động)</option>
+				<option value="2" <% nvram_match_x("","singbox_mode","2","selected"); %>>Mode 3: Custom JSON (Dùng cấu hình bên dưới)</option>
+			</select>
 		</td>
 	</tr>
 	</table>
 
+	<!-- BẢNG 2: QUẢN LÝ SUBSCRIPTION / LINK NODE -->
+	<table width="100%" cellpadding="4" cellspacing="0" class="table">
+	<tr><th colspan="2" style="background-color:#756c78;">Subscription & Node Management</th></tr>
+	<tr>
+		<th width="30%">Tên Nhóm / Thư mục</th>
+		<td>
+			<input type="text" name="singbox_sub_name" class="input" style="width:60%;" value="<% nvram_get_x("","singbox_sub_name"); %>" placeholder="Ví dụ: 🇻🇳 Gói VIP Viettel">
+			<span style="color:#888; display:block;">Tên này sẽ hiển thị làm Thư mục phân loại trên Dashboard.</span>
+		</td>
+	</tr>
+	<tr>
+		<th>Link Subscription (URL)</th>
+		<td>
+			<input type="text" id="singbox_sub_url" name="singbox_sub_url" class="input" style="width:60%;" value="<% nvram_get_x("","singbox_sub_url"); %>" placeholder="https://example.com/sub/link">
+			<input class="btn btn-info" type="button" value="🔍 Check Link" onclick="checkSubUrl();">
+			<div id="sub_url_status" style="margin-top:5px;"></div>
+		</td>
+	</tr>
+	</table>
+
+	<!-- BẢNG 3: TỐI ƯU NÂNG CAO -->
+	<table width="100%" cellpadding="4" cellspacing="0" class="table">
+	<tr><th colspan="2" style="background-color:#756c78;">Optimization & Advanced Settings</th></tr>
+	<tr>
+		<th width="30%">Bypass IP/Tên miền VN</th>
+		<td>
+			<select name="singbox_bypass_vn" class="input">
+				<option value="0" <% nvram_match_x("","singbox_bypass_vn","0","selected"); %>>Disable (Tất cả qua VPN)</option>
+				<option value="1" <% nvram_match_x("","singbox_bypass_vn","1","selected"); %>>Enable (Cho IP/Web Việt Nam đi thẳng)</option>
+			</select>
+			<span style="color:#888; display:block;">Giúp vào trang web Việt Nam nhanh nhất và tiết kiệm dung lượng VPN.</span>
+		</td>
+	</tr>
+	<tr>
+		<th>Chặn quảng cáo (AdBlock)</th>
+		<td>
+			<select name="singbox_adblock" class="input">
+				<option value="0" <% nvram_match_x("","singbox_adblock","0","selected"); %>>Disable</option>
+				<option value="1" <% nvram_match_x("","singbox_adblock","1","selected"); %>>Enable (Chặn quảng cáo tự động)</option>
+			</select>
+		</td>
+	</tr>
+	<tr>
+		<th>Chế độ DNS (DNS Mode)</th>
+		<td>
+			<select name="singbox_dns_mode" class="input">
+				<option value="0" <% nvram_match_x("","singbox_dns_mode","0","selected"); %>>Direct (Mặc định)</option>
+				<option value="1" <% nvram_match_x("","singbox_dns_mode","1","selected"); %>>FakeIP (Tăng tốc & Chống rò rỉ DNS)</option>
+				<option value="2" <% nvram_match_x("","singbox_dns_mode","2","selected"); %>>DoH (Cloudflare / Google Secure DNS)</option>
+			</select>
+		</td>
+	</tr>
+	<tr>
+		<th>Giới hạn RAM (Go Runtime)</th>
+		<td>
+			<select name="singbox_mem_limit" class="input">
+				<option value="48MiB" <% nvram_match_x("","singbox_mem_limit","48MiB","selected"); %>>48 MB (Khuyên dùng cho NEWIFI3)</option>
+				<option value="64MiB" <% nvram_match_x("","singbox_mem_limit","64MiB","selected"); %>>64 MB</option>
+				<option value="96MiB" <% nvram_match_x("","singbox_mem_limit","96MiB","selected"); %>>96 MB</option>
+			</select>
+		</td>
+	</tr>
+	</table>
+
+	<!-- BẢNG 4: RAW CONFIG JSON -->
 	<table width="100%" cellpadding="4" cellspacing="0" class="table">
 	<tr><th colspan="2" style="background-color:#756c78;">
-		Configuration (raw JSON)
+		Configuration (raw JSON - Dùng cho Mode 3)
 		<input class="btn btn-mini" style="float:right;" type="button" value="Show/Hide" onclick="toggleConfig();" />
 	</th></tr>
 	<tr id="singbox_config_row" style="display:none;">
@@ -188,6 +286,7 @@ function clearLog(){
 
 	</div>
 
+	<!-- TAB RUN LOG -->
 	<div id="wnd_singbox_log" style="display:none;">
 	<div class="alert alert-info" style="margin:10px;">Live log output from sing-box.
 		<input class="btn btn-danger" style="float:right;" type="button" value="Clear Log" onclick="clearLog()" />
