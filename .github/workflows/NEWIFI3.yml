@@ -89,6 +89,83 @@ jobs:
         fi
         
         echo "SB_TAG=${SB_TAG}" >> $GITHUB_ENV
+    - name: Build jq (static mipsel) cho router
+      run: |
+        JQ_TAG=$(curl -s https://api.github.com/repos/jqlang/jq/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+        echo "Latest jq version: $JQ_TAG"
+        [ -z "$JQ_TAG" ] && JQ_TAG="jq-1.7.1"
+        JQ_VER="${JQ_TAG#jq-}"
+
+        # Dò đúng toolchain mipsel mà bước "Clone source code" đã tải (dl_toolchain.sh),
+        # để jq build ra đúng ABI (uclibc/musl, softfloat...) khớp router - thay vì
+        # đoán cứng tên prefix (rủi ro sai giữa các fork/version toolchain khác nhau).
+        CROSS_BIN="$(find /opt/rt-n56u/toolchain-mipsel -maxdepth 6 -type d -iname bin 2>/dev/null | head -n1)"
+        if [ -z "$CROSS_BIN" ]; then
+          echo "!!! Khong tim thay thu muc bin cua toolchain-mipsel -> bo qua build jq"
+          echo "!!! (Router se can cai jq qua Entware/opkg thu cong, hoac dung Mode 3 Custom JSON)"
+          exit 0
+        fi
+
+        CROSS_GCC="$(find "$CROSS_BIN" -maxdepth 1 -name '*-gcc' 2>/dev/null | head -n1)"
+        if [ -z "$CROSS_GCC" ]; then
+          echo "!!! Khong tim thay *-gcc trong $CROSS_BIN -> bo qua build jq"
+          exit 0
+        fi
+        CROSS_PREFIX="${CROSS_GCC%gcc}"
+        CROSS_TRIPLET="$(basename "$CROSS_PREFIX")"
+        CROSS_TRIPLET="${CROSS_TRIPLET%-}"
+        export PATH="$CROSS_BIN:$PATH"
+        echo "Dung toolchain: $CROSS_GCC (triplet: $CROSS_TRIPLET)"
+
+        JQ_URL="https://github.com/jqlang/jq/releases/download/${JQ_TAG}/jq-${JQ_VER}.tar.gz"
+        echo "Tai jq source: $JQ_URL"
+        curl -Lo /tmp/jq-src.tar.gz "$JQ_URL" || { echo "!!! Tai jq source that bai -> bo qua"; exit 0; }
+        mkdir -p /tmp/jq-src
+        tar -xzf /tmp/jq-src.tar.gz -C /tmp/jq-src --strip-components=1
+        cd /tmp/jq-src
+
+        CC="$CROSS_GCC" CFLAGS="-Os" ./configure \
+          --host="$CROSS_TRIPLET" \
+          --disable-shared --enable-static \
+          --without-oniguruma \
+          --disable-maintainer-mode \
+          --disable-docs \
+          || { echo "!!! configure jq that bai -> bo qua, xem log ben tren de biet nguyen nhan"; exit 0; }
+
+        make LDFLAGS="-all-static" -j"$(nproc)" \
+          || { echo "!!! make jq that bai -> bo qua"; exit 0; }
+
+        if [ -f ./jq ]; then
+          JQ_OUT=./jq
+        elif [ -f ./jq.exe ]; then
+          JQ_OUT=./jq.exe
+        else
+          echo "!!! Khong tim thay binary jq sau khi build -> bo qua"
+          exit 0
+        fi
+
+        "${CROSS_PREFIX}strip" "$JQ_OUT" 2>/dev/null || true
+
+        mkdir -p /opt/images
+        cp -f "$JQ_OUT" /opt/images/jq-mipsle.bin
+        upx --lzma --best /opt/images/jq-mipsle.bin || echo "UPX nen that bai, giu binary chua nen"
+
+        echo "=== KET QUA BUILD JQ ==="
+        file /opt/images/jq-mipsle.bin || true
+        ls -la /opt/images/jq-mipsle.bin
+
+        # Đảm bảo singbox.sh biết đúng tên asset jq để tự tải về trên router.
+        # (Chỉ hoạt động với bản singbox.sh có hỗ trợ tự tải jq - biến JQ_ASSET_NAME)
+        SH_FILE=$(find /opt/rt-n56u/trunk/user/ -name "singbox.sh" | head -n1)
+        if [ -f "$SH_FILE" ]; then
+          if grep -q "JQ_ASSET_NAME=" "$SH_FILE"; then
+            sed -i "s|JQ_ASSET_NAME=\".*\"|JQ_ASSET_NAME=\"jq-mipsle.bin\"|g" "$SH_FILE"
+            echo "Da cap nhat JQ_ASSET_NAME trong $SH_FILE"
+          else
+            echo "CANH BAO: $SH_FILE chua co bien JQ_ASSET_NAME - hay dung ban singbox.sh moi nhat (co ho tro tu tai jq)"
+          fi
+        fi
+      continue-on-error: true
     - name: Build Firmware
       env:
         TNAME: NEWIFI3
