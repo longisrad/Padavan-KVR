@@ -1266,6 +1266,7 @@
 			{"singbox_sub_list", "", NULL, EVM_RESTART_SINGBOX},
 			{"singbox_auto_update", "", NULL, EVM_RESTART_SINGBOX},
 			{"scripts.singbox.conf", "File", NULL, EVM_RESTART_SINGBOX},
+            {"scripts.singbox_sub.json", "File", NULL, EVM_RESTART_SINGBOX},
 			{0,0,0,0}
 	};
 #endif
