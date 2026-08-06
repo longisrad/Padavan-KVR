@@ -3955,6 +3955,14 @@ apply_cgi(const char *url, webs_t wp)
 		websRedirect(wp, current_url);
 		return 0;
 	}
+	else if (!strcmp(value, " ClearSingboxLog "))
+	{
+#if defined(APP_SINGBOX)
+		unlink("/tmp/singbox.log");
+#endif
+		websRedirect(wp, current_url);
+		return 0;
+	}
 	else if (!strcmp(value, " CleareasytierLog "))
 	{
 #if defined(APP_EASYTIER)
