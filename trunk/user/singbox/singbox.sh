@@ -5,7 +5,7 @@ BIN_DIR="/tmp/sing-box"
 BIN_PATH="$BIN_DIR/sing-box"
 CFG_PATH="/etc/storage/singbox.conf"
 WORK_DIR="/tmp/sing-box/work"
-LOG_FILE="/tmp/sing-box.log"
+LOG_FILE="/tmp/singbox.log"
 LOG_TAG="sing-box"
 WATCHDOG_FILE="/tmp/script/_opt_script_check"
 
