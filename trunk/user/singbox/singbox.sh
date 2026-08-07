@@ -1,5 +1,5 @@
 #!/bin/sh
-# sing-box lifecycle manager for Padavan-KVR (NEWIFI3) - Embedded RAM Edition
+# sing-box lifecycle manager for Newifi 3 D2 (MT7621AT - TProxy Mode Edition)
 
 export PATH="/opt/sbin:/opt/bin:$PATH"
 
@@ -48,7 +48,7 @@ download_binary() {
     log "Đang tải sing-box từ ${REPO} về RAM (/tmp/sing-box)..."
     mkdir -p "$BIN_DIR"
 
-    dl_url="$(curl -sk --connect-timeout 5 "$GH_API" 2>/dev/null \
+    dl_url="$(curl -sk --connect-timeout 4 "$GH_API" 2>/dev/null \
         | grep -E "browser_download_url.*(${ASSET_NAME}|\.tar\.gz|\.zip)" \
         | cut -d'"' -f4 | head -n1)"
 
@@ -58,8 +58,8 @@ download_binary() {
     fi
 
     tmp_file="/tmp/sing-box/download_sb.tmp"
-    curl -Lksfo "$tmp_file" --connect-timeout 10 --retry 2 --max-time 120 "$dl_url" \
-        || wget --no-check-certificate -T 20 -t 2 -q -O "$tmp_file" "$dl_url"
+    curl -Lksfo "$tmp_file" --connect-timeout 5 --retry 2 --max-time 90 "$dl_url" \
+        || wget --no-check-certificate -T 15 -t 2 -q -O "$tmp_file" "$dl_url"
 
     size="$(wc -c < "$tmp_file" 2>/dev/null)"
     if [ -z "$size" ] || [ "$size" -lt 100000 ]; then
@@ -132,8 +132,8 @@ ensure_dashboard() {
     mkdir -p "$UI_DIR"
     tmp_zip="/tmp/sing-box/ui.zip"
 
-    curl -Lksfo "$tmp_zip" --connect-timeout 10 --retry 2 --max-time 90 "$UI_URL" \
-        || wget --no-check-certificate -T 20 -t 2 -q -O "$tmp_zip" "$UI_URL"
+    curl -Lksfo "$tmp_zip" --connect-timeout 5 --retry 2 --max-time 60 "$UI_URL" \
+        || wget --no-check-certificate -T 15 -t 2 -q -O "$tmp_zip" "$UI_URL"
 
     size="$(wc -c < "$tmp_zip" 2>/dev/null)"
     if [ -z "$size" ] || [ "$size" -lt 100000 ]; then
@@ -197,7 +197,7 @@ have_jq() {
 download_jq() {
     log "Không tìm thấy jq trên máy -> đang tự tải bản build sẵn (${JQ_ASSET_NAME}) về RAM..."
 
-    dl_url="$(curl -sk --connect-timeout 5 "$GH_API" 2>/dev/null \
+    dl_url="$(curl -sk --connect-timeout 4 "$GH_API" 2>/dev/null \
         | grep "browser_download_url.*${JQ_ASSET_NAME}" \
         | cut -d'"' -f4 | head -n1)"
 
@@ -208,8 +208,8 @@ download_jq() {
 
     mkdir -p /tmp/sing-box
     tmp_jq="/tmp/sing-box/jq"
-    curl -Lksfo "$tmp_jq" --connect-timeout 10 --retry 2 --max-time 60 "$dl_url" \
-        || wget --no-check-certificate -T 20 -t 2 -q -O "$tmp_jq" "$dl_url"
+    curl -Lksfo "$tmp_jq" --connect-timeout 4 --retry 2 --max-time 40 "$dl_url" \
+        || wget --no-check-certificate -T 10 -t 2 -q -O "$tmp_jq" "$dl_url"
 
     size="$(wc -c < "$tmp_jq" 2>/dev/null)"
     if [ -z "$size" ] || [ "$size" -lt 100000 ]; then
@@ -236,45 +236,26 @@ ensure_converter() {
             cp -f "/etc_ro/singbox/converter.lua" "$CONVERTER_PATH"
         else
             log "Tải converter.lua về RAM từ GitHub..."
-            curl -Lksfo "$CONVERTER_PATH" --connect-timeout 10 "https://raw.githubusercontent.com/Sophiedevops/singbox-padavan-easy-crawler-2/main/converter.lua"
+            curl -Lksfo "$CONVERTER_PATH" --connect-timeout 5 "https://raw.githubusercontent.com/Sophiedevops/singbox-padavan-easy-crawler-2/main/converter.lua"
         fi
     fi
 }
 
 build_dns_block() {
-    case "$1" in
-        1)
-            cat <<-EOF
+    cat <<-EOF
   "dns": {
     "servers": [
-      { "tag": "dns-remote", "type": "tls", "server": "8.8.8.8" },
+      { "tag": "dns-remote", "type": "tls", "server": "8.8.8.8", "detour": "select" },
+      { "tag": "dns-direct", "type": "udp", "server": "223.5.5.5", "detour": "direct" },
       { "tag": "dns-fakeip", "type": "fakeip", "inet4_range": "198.18.0.0/15" }
     ],
-    "rules": [ { "query_type": ["A","AAAA"], "server": "dns-fakeip" } ],
-    "independent_cache": true
-  },
-EOF
-            ;;
-        2)
-            cat <<-EOF
-  "dns": {
-    "servers": [
-      { "tag": "dns-remote", "type": "https", "server": "1.1.1.1", "path": "/dns-query" },
-      { "tag": "dns-direct", "type": "udp", "server": "8.8.8.8" }
+    "rules": [
+      { "query_type": ["A", "AAAA"], "server": "dns-fakeip" }
     ],
+    "final": "dns-remote",
     "independent_cache": true
   },
 EOF
-            ;;
-        *)
-            cat <<-EOF
-  "dns": {
-    "servers": [ { "tag": "dns-direct", "type": "udp", "server": "8.8.8.8" } ],
-    "independent_cache": true
-  },
-EOF
-            ;;
-    esac
 }
 
 build_route_block() {
@@ -303,8 +284,8 @@ ${rulesets%,
 }
     ],
     "rules": [
-    { "port": 53, "outbound": "direct" },
-${rules}    { "ip_is_private": true, "outbound": "direct" }
+      { "protocol": "dns", "action": "hijack-dns" },
+${rules}      { "ip_is_private": true, "outbound": "direct" }
     ],
     "final": "${final_tag}",
     "auto_detect_interface": true
@@ -343,10 +324,10 @@ fetch_all_groups() {
 
         cache="$GROUP_DIR/sub_${i}.json"
         log "Đang tải sub '$name': $url"
-        curl -Lksfo "$cache" --connect-timeout 10 --max-time 30 "$url" \
-            || wget --no-check-certificate -T 15 -q -O "$cache" "$url"
+        
+        curl -Lksfo "$cache" --connect-timeout 4 --max-time 12 "$url" \
+            || wget --no-check-certificate -T 10 -q -O "$cache" "$url"
 
-        # Kiểm tra nếu sub không phải JSON chuẩn -> Dùng converter.lua giải mã link thô (Base64 / vless / ss...)
         if ! "$JQ_BIN" -e '.outbounds' "$cache" >/dev/null 2>&1; then
             log "Sub '$name' không phải JSON chuẩn -> Giải mã link thô bằng converter.lua..."
             ensure_converter
@@ -370,7 +351,7 @@ fetch_all_groups() {
         proxies="$("$JQ_BIN" -c --arg pfx "${name} - " '
             [ .outbounds[]
               | select(.type!="direct" and .type!="block" and .type!="dns" and .type!="selector" and .type!="urltest")
-              | .tag = ($pfx + .tag) ]' "$cache" 2>/dev/null)"
+              | .tag = ($pfx + .tag) ][0:300]' "$cache" 2>/dev/null)"
         [ -z "$proxies" ] && proxies="[]"
 
         pcount="$(echo "$proxies" | "$JQ_BIN" 'length' 2>/dev/null)"
@@ -397,8 +378,9 @@ fetch_all_groups() {
 
 generate_config() {
     mode="$1"
+    
     mem_limit="$(nv singbox_mem_limit)"
-    [ -z "$mem_limit" ] && mem_limit="48MiB"
+    [ -z "$mem_limit" ] && mem_limit="192MiB"
     
     bypass_vn="$(nv singbox_bypass_vn)"
     [ -z "$bypass_vn" ] && bypass_vn="1"
@@ -409,10 +391,11 @@ generate_config() {
     dns_mode="$(nv singbox_dns_mode)"
     [ -z "$dns_mode" ] && dns_mode="1"
 
+    # CHUYỂN INBOUND SANG TPROXY CHO MODE 1/2
     if [ "$mode" = "0" ]; then
         inbound_block='  "inbounds": [ { "type": "mixed", "tag": "mixed-in", "listen": "0.0.0.0", "listen_port": 7890 } ],'
     else
-        inbound_block='  "inbounds": [ { "type": "tun", "tag": "tun-in", "interface_name": "singbox0", "address": ["172.19.0.1/30"], "mtu": 1400, "auto_route": false, "stack": "gvisor" } ],'
+        inbound_block='  "inbounds": [ { "type": "tproxy", "tag": "tproxy-in", "listen": "0.0.0.0", "listen_port": 7893, "sniff": true, "sniff_override_destination": true } ],'
     fi
 
     if fetch_all_groups; then
@@ -450,45 +433,40 @@ generate_config() {
         echo "}"
     } > "$CFG_PATH"
 
-    log "Đã sinh config.json (mode=$mode, mem_limit=$mem_limit, bypass_vn=$bypass_vn, adblock=$adblock, dns_mode=$dns_mode, final=$final_tag)"
+    log "Đã sinh config.json TProxy (mode=$mode, mem_limit=$mem_limit, bypass_vn=$bypass_vn, adblock=$adblock, dns_mode=$dns_mode, final=$final_tag)"
 }
 
+# ĐIỀU HƯỚNG IPTABLES TPROXY TOÀN MẠNG LAN (CỰC NHANH VÀ KHÔNG CẦN CẠC MẠNG ẢO)
 apply_iptables_mode() {
     sb_mode="$(nv singbox_mode)"
     if [ "$sb_mode" = "1" ]; then
-        log "Applying IPTables rules for Mode 2 (TUN Mode)..."
-        tries=0
-        while [ ! -e /sys/class/net/singbox0 ] && [ "$tries" -lt 5 ]; do
-            log "Đợi interface singbox0 lên... ($tries/5)"
-            sleep 1
-            tries=$((tries + 1))
-        done
+        log "Applying IPTables TPROXY rules for Full LAN Transparent Proxy..."
+        
+        # Setup Policy Routing
+        ip rule add fwmark 1 table 100 2>/dev/null
+        ip route add local default dev lo table 100 2>/dev/null
 
-        ip rule add pref 100 fwmark 1 table 100 2>/dev/null
-
-        for rp_if in all default br0 singbox0; do
-            [ -f "/proc/sys/net/ipv4/conf/${rp_if}/rp_filter" ] && echo 0 > "/proc/sys/net/ipv4/conf/${rp_if}/rp_filter" 2>/dev/null
-        done
-
-        if ip route show table 100 2>/dev/null | grep -q "dev singbox0"; then
-            log "Route table 100 đã có sẵn, bỏ qua"
-        elif ip route add default dev singbox0 table 100 2>/tmp/singbox_iproute.err; then
-            log "Đã thêm route table 100 -> singbox0 thành công"
-        else
-            log "LOI: 'ip route add default dev singbox0 table 100' thất bại -> $(cat /tmp/singbox_iproute.err 2>/dev/null | tr '\n' ' ')"
-        fi
-        rm -f /tmp/singbox_iproute.err
+        # Tạo chuỗi Mangle TPROXY
         iptables -t mangle -N SINGBOX 2>/dev/null
         iptables -t mangle -F SINGBOX 2>/dev/null
+        
+        # Loại trừ các dải IP nội bộ
         iptables -t mangle -A SINGBOX -d 0.0.0.0/8 -j RETURN
         iptables -t mangle -A SINGBOX -d 10.0.0.0/8 -j RETURN
         iptables -t mangle -A SINGBOX -d 127.0.0.0/8 -j RETURN
         iptables -t mangle -A SINGBOX -d 169.254.0.0/16 -j RETURN
         iptables -t mangle -A SINGBOX -d 172.16.0.0/12 -j RETURN
         iptables -t mangle -A SINGBOX -d 192.168.0.0/16 -j RETURN
-        iptables -t mangle -A SINGBOX -p tcp -j MARK --set-mark 1
-        iptables -t mangle -A SINGBOX -p udp -j MARK --set-mark 1
+        iptables -t mangle -A SINGBOX -d 224.0.0.0/4 -j RETURN
+        iptables -t mangle -A SINGBOX -d 240.0.0.0/4 -j RETURN
+        
+        # Chuyển hướng TCP & UDP vào cổng TPROXY 7893
+        iptables -t mangle -A SINGBOX -p tcp -j TPROXY --on-port 7893 --tproxy-mark 1
+        iptables -t mangle -A SINGBOX -p udp -j TPROXY --on-port 7893 --tproxy-mark 1
+        
+        # Áp dụng cho toàn bộ giao diện mạng LAN br0
         iptables -t mangle -I PREROUTING -i br0 -j SINGBOX 2>/dev/null
+        log "Kích hoạt TProxy toàn mạng LAN thành công!"
     else
         clean_iptables
     fi
@@ -498,8 +476,8 @@ clean_iptables() {
     iptables -t mangle -D PREROUTING -i br0 -j SINGBOX 2>/dev/null
     iptables -t mangle -F SINGBOX 2>/dev/null
     iptables -t mangle -X SINGBOX 2>/dev/null
-    ip rule del pref 100 fwmark 1 table 100 2>/dev/null
-    ip route del default dev singbox0 table 100 2>/dev/null
+    ip rule del fwmark 1 table 100 2>/dev/null
+    ip route del local default dev lo table 100 2>/dev/null
 }
 
 install_cron() {
@@ -633,9 +611,9 @@ start() {
     ensure_config
 
     mem_limit="$(nv singbox_mem_limit)"
-    [ -z "$mem_limit" ] && mem_limit="48MiB"
+    [ -z "$mem_limit" ] && mem_limit="192MiB"
     export GOMEMLIMIT="$mem_limit"
-    export GOGC=30
+    export GOGC=80
 
     cd "$WORK_DIR" && "$BIN_PATH" run -c "$CFG_PATH" >> "$LOG_FILE" 2>&1 &
 
