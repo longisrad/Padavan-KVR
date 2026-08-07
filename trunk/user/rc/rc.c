@@ -1377,6 +1377,10 @@ handle_notifications(void)
 		{
 			restart_singbox();
 		}
+		else if (strcmp(entry->d_name, RCN_UPDATE_SINGBOX_SUB) == 0)
+		{
+			update_singbox_sub();
+		}
 #endif
 #if defined(APP_SMARTDNS)
 		else if (strcmp(entry->d_name, RCN_RESTART_SMARTDNS) == 0)

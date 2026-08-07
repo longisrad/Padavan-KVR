@@ -460,6 +460,12 @@ void restart_singbox(void){
 	start_singbox();
 }
 
+void update_singbox_sub(void){
+	int sb_enable = nvram_get_int("singbox_enable");
+	if (sb_enable == 1)
+		eval("/usr/bin/singbox.sh","update_sub","force");
+}
+
 #endif
 
 #if defined(APP_WYY)
