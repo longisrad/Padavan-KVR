@@ -271,6 +271,7 @@ ${rulesets%,
 }
     ],
     "rules": [
+    { "port": 53, "outbound": "direct" },
 ${rules}    { "ip_is_private": true, "outbound": "direct" }
     ],
     "final": "${final_tag}",
@@ -282,7 +283,7 @@ EOF
 GROUP_DIR="/tmp/sing-box/groups"
 
 fetch_all_groups() {
-    sub_list_json="$(cat /etc/storage/singbox_sub.json 2>/dev/null)"
+    sub_list_json="$(nv singbox_sub_list)"
     [ -z "$sub_list_json" ] && { log "Chưa có Subscription nào trong singbox_sub_list"; return 1; }
 
     if ! have_jq; then
@@ -363,7 +364,7 @@ generate_config() {
     if [ "$mode" = "0" ]; then
         inbound_block='  "inbounds": [ { "type": "mixed", "tag": "mixed-in", "listen": "0.0.0.0", "listen_port": 7890 } ],'
     else
-        inbound_block='  "inbounds": [ { "type": "tun", "tag": "tun-in", "interface_name": "singbox0", "address": ["172.19.0.1/30"], "mtu": 1500, "auto_route": false, "stack": "system" } ],'
+        inbound_block='  "inbounds": [ { "type": "tun", "tag": "tun-in", "interface_name": "singbox0", "address": ["172.19.0.1/30"], "mtu": 1400, "auto_route": false, "stack": "system" } ],'
     fi
 
     if fetch_all_groups; then
@@ -409,8 +410,31 @@ apply_iptables_mode() {
     sb_mode="$(nv singbox_mode)"
     if [ "$sb_mode" = "1" ]; then
         log "Applying IPTables rules for Mode 2 (TUN Mode)..."
-        ip rule add fwmark 1 table 100 2>/dev/null
-        ip route add default dev singbox0 table 100 2>/dev/null
+        # Chờ tối đa 5s để singbox0 thực sự lên hẳn trước khi thêm route,
+        # tránh race condition khiến "ip route add" thất bại âm thầm ngay sau khi start
+        tries=0
+        while [ ! -e /sys/class/net/singbox0 ] && [ "$tries" -lt 5 ]; do
+            log "Đợi interface singbox0 lên... ($tries/5)"
+            sleep 1
+            tries=$((tries + 1))
+        done
+
+        ip rule add pref 100 fwmark 1 table 100 2>/dev/null
+
+        # Tắt rp_filter (reverse path filter) trên br0 và singbox0 - nếu không tắt,
+        # kernel sẽ âm thầm drop traffic vì thấy đường đi "không đối xứng" do policy routing
+        for rp_if in all default br0 singbox0; do
+            [ -f "/proc/sys/net/ipv4/conf/${rp_if}/rp_filter" ] && echo 0 > "/proc/sys/net/ipv4/conf/${rp_if}/rp_filter" 2>/dev/null
+        done
+
+        if ip route show table 100 2>/dev/null | grep -q "dev singbox0"; then
+            log "Route table 100 đã có sẵn, bỏ qua"
+        elif ip route add default dev singbox0 table 100 2>/tmp/singbox_iproute.err; then
+            log "Đã thêm route table 100 -> singbox0 thành công"
+        else
+            log "LOI: 'ip route add default dev singbox0 table 100' that bai -> $(cat /tmp/singbox_iproute.err 2>/dev/null | tr '\n' ' ')"
+        fi
+        rm -f /tmp/singbox_iproute.err
         iptables -t mangle -N SINGBOX 2>/dev/null
         iptables -t mangle -F SINGBOX 2>/dev/null
         iptables -t mangle -A SINGBOX -d 0.0.0.0/8 -j RETURN
@@ -431,7 +455,7 @@ clean_iptables() {
     iptables -t mangle -D PREROUTING -i br0 -j SINGBOX 2>/dev/null
     iptables -t mangle -F SINGBOX 2>/dev/null
     iptables -t mangle -X SINGBOX 2>/dev/null
-    ip rule del fwmark 1 table 100 2>/dev/null
+    ip rule del pref 100 fwmark 1 table 100 2>/dev/null
     ip route del default dev singbox0 table 100 2>/dev/null
 }
 
