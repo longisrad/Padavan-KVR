@@ -1,0 +1,13 @@
+dns:
+  bind_hosts:
+    - 0.0.0.0
+  port: 5335
+  cache_size: 1048576
+  upstream_dns:
+    - 127.0.0.1:5353
+  fallback_dns:
+    - https://dns.cloudflare.com/dns-query
+    - 1.1.1.1
+  bootstrap_dns:
+    - 1.1.1.1
+    - 8.8.8.8
