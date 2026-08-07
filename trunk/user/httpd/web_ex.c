@@ -4030,9 +4030,79 @@ apply_cgi(const char *url, webs_t wp)
 			sscanf(result_line, "%d %ld", &http_code, &dl_size);
 
 			websWrite(wp, "{\"ok\":%d,\"http_code\":%d,\"size\":%ld}",
-				(http_code >= 200 && http_code < 400 && dl_size > 100) ? 1 : 0,
-				http_code, dl_size);
+else if (!strcmp(value, " ClearSingboxLog "))
+	{
+#if defined(APP_SINGBOX)
+		unlink("/tmp/singbox.log");
+#endif
+		websRedirect(wp, current_url);
+		return 0;
+	}
+	else if (!strcmp(value, " UpdateSingboxSub "))
+	{
+		// Cập nhật lại toàn bộ nguồn Subscription ngay lập tức
+#if defined(APP_SINGBOX)
+		system("/usr/bin/singbox.sh update_sub force >/dev/null 2>&1 &");
+#endif
+		websRedirect(wp, current_url);
+		return 0;
+	}
+	else if (!strcmp(value, " RunGenLinks "))
+	{
+		// Gọi script tạo link client
+#if defined(APP_SINGBOX)
+		system("/etc_ro/singbox/gen_links.sh >/dev/null 2>&1 &");
+#endif
+		return 0;
+	}
+	else if (!strcmp(value, " CheckSingboxSubUrl "))
+	{
+		// Kiểm tra link Subscription
+#if defined(APP_SINGBOX)
+		char *raw_url = websGetVar(wp, "check_url", "");
+		char esc_url[600];
+		char cmd[900];
+		char result_line[128];
+		FILE *fstream;
+		int http_code = 0;
+		long dl_size = 0;
+		size_t ri, wi;
+
+		result_line[0] = '\0';
+
+		if (strlen(raw_url) == 0 || strlen(raw_url) > 500) {
+			websWrite(wp, "{\"ok\":0,\"http_code\":0,\"size\":0}");
+			return 0;
 		}
+
+		for (ri = 0, wi = 0; raw_url[ri] != '\0' && wi < sizeof(esc_url) - 5; ri++) {
+			if (raw_url[ri] == '\'') {
+				esc_url[wi++] = '\'';
+				esc_url[wi++] = '\\';
+				esc_url[wi++] = '\'';
+				esc_url[wi++] = '\'';
+			} else {
+				esc_url[wi++] = raw_url[ri];
+			}
+		}
+		esc_url[wi] = '\0';
+
+		snprintf(cmd, sizeof(cmd),
+			"curl -sk -o /dev/null -m 8 --connect-timeout 5 -w '%%{http_code} %%{size_download}' '%s' 2>/dev/null",
+			esc_url);
+
+		fstream = popen(cmd, "r");
+		if (fstream) {
+			if (fgets(result_line, sizeof(result_line), fstream) == NULL)
+				result_line[0] = '\0';
+			pclose(fstream);
+		}
+
+		sscanf(result_line, "%d %ld", &http_code, &dl_size);
+
+		websWrite(wp, "{\"ok\":%d,\"http_code\":%d,\"size\":%ld}",
+			(http_code >= 200 && http_code < 400 && dl_size > 100) ? 1 : 0,
+			http_code, dl_size);
 #else
 		websWrite(wp, "{\"ok\":0,\"http_code\":0,\"size\":0}");
 #endif
