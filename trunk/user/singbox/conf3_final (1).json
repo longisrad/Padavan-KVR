@@ -1,0 +1,105 @@
+{
+  "log": {
+    "level": "warn",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      { "tag": "bootstrap-global", "type": "udp", "server": "8.8.8.8", "detour": "direct" },
+      { "tag": "bootstrap-cf", "type": "udp", "server": "1.1.1.1", "detour": "direct" },
+      { "tag": "bootstrap-cn", "type": "udp", "server": "223.5.5.5", "detour": "direct" },
+      { "tag": "doh-mullvad-se", "type": "https", "server": "194.242.2.2", "detour": "direct" },
+      { "tag": "doh-libredns-de", "type": "https", "server": "116.203.115.192", "detour": "direct" },
+      { "tag": "doh-blahdns-fi", "type": "https", "server": "95.216.214.21", "detour": "direct" },
+      { "tag": "doh-dnssb-nl", "type": "https", "server": "185.222.222.222", "detour": "direct" },
+      { "tag": "doh-applied-privacy-at", "type": "https", "server": "147.28.183.20", "path": "/query", "detour": "direct" },
+      { "tag": "doh-cf-main", "type": "https", "server": "1.1.1.1", "detour": "direct" },
+      { "tag": "doh-cf-mozilla", "type": "https", "server": "104.16.248.249", "detour": "direct" },
+      { "tag": "doh-google", "type": "https", "server": "8.8.8.8", "detour": "direct" },
+      { "tag": "doh-quad9", "type": "https", "server": "9.9.9.9", "detour": "direct" },
+      { "tag": "doh-controld", "type": "https", "server": "76.76.2.0", "detour": "direct" },
+      { "tag": "doh-quad101-tw", "type": "https", "server": "101.101.101.101", "detour": "direct" },
+      { "tag": "doh-iij-jp", "type": "https", "server": "103.2.57.5", "detour": "direct" },
+      { "tag": "doh-rethink-in", "type": "https", "server": "109.111.196.10", "detour": "direct" },
+      { "tag": "doh-cira-ca", "type": "https", "server": "149.112.121.20", "detour": "direct" },
+      { "tag": "doh-nextdns", "type": "https", "server": "45.90.28.0", "detour": "direct" },
+      { "tag": "doh-opendns", "type": "https", "server": "208.67.222.222", "detour": "direct" },
+      { "tag": "doh-cleanbrowsing", "type": "https", "server": "185.228.168.9", "detour": "direct" },
+      { "tag": "doh-dnssb-de", "type": "https", "server": "185.222.222.223", "detour": "direct" },
+      { "tag": "dot-yandex-ru", "type": "tls", "server": "77.88.8.8", "detour": "direct" },
+      { "tag": "doq-adguard", "type": "quic", "server": "94.140.14.14", "detour": "direct" },
+      { "tag": "doq-quad9-global", "type": "quic", "server": "9.9.9.9", "detour": "direct" },
+      { "tag": "h3-cloudflare-global", "type": "h3", "server": "1.1.1.1", "detour": "direct" },
+      { "tag": "doq-nextdns-global", "type": "quic", "server": "45.90.28.0", "detour": "direct" },
+      { "tag": "doq-controld-ca", "type": "quic", "server": "76.76.2.0", "detour": "direct" },
+      { "tag": "h3-adguard-unfiltered", "type": "h3", "server": "94.140.14.140", "detour": "direct" },
+      { "tag": "dot-cleanbrowsing-us", "type": "tls", "server": "185.228.168.9", "detour": "direct" },
+      { "tag": "doq-dnssb-nl", "type": "quic", "server": "185.222.222.222", "detour": "direct" }
+    ],
+    "final": "doh-mullvad-se",
+    "strategy": "prefer_ipv4"
+  },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "::",
+      "listen_port": 20081
+    },
+    {
+      "type": "hysteria2",
+      "tag": "hy2-in",
+      "listen": "::",
+      "listen_port": 20082,
+      "users": [
+        { "password": "dae2fbf8f37b9d50cfd5" }
+      ],
+      "tls": {
+        "enabled": true,
+        "certificate_path": "/opt/tmp_sb_ext/sing-box-1.13.12-extended-2.4.1-linux-mipsle/certs/grpc/h2.cert",
+        "key_path": "/opt/tmp_sb_ext/sing-box-1.13.12-extended-2.4.1-linux-mipsle/certs/grpc/h2.pem"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "ss-in",
+      "listen": "::",
+      "listen_port": 20083,
+      "method": "none",
+      "password": "cd25571201d4830f2bec0467"
+    },
+    {
+      "type": "socks",
+      "tag": "socks-in",
+      "listen": "::",
+      "listen_port": 20084
+    },
+    {
+      "type": "http",
+      "tag": "http-in",
+      "listen": "::",
+      "listen_port": 20085
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      }
+    ],
+    "final": "Best-Auto",
+    "auto_detect_interface": true,
+    "default_domain_resolver": "bootstrap-global"
+  }
+}
