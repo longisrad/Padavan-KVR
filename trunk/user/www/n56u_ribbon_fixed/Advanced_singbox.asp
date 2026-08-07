@@ -23,6 +23,7 @@ $j(document).ready(function() {
 	init_itoggle('singbox_enable');
 	init_itoggle('singbox_bypass_vn');
 	init_itoggle('singbox_adblock');
+	init_itoggle('singbox_auto_update');
 });
 
 var subList = [];
@@ -187,36 +188,32 @@ function checkSubUrl(){
 		status.html('<span style="color:#d9534f;">Vui lòng nhập Link Subscription trước!</span>'); 
 		return; 
 	}
-	status.html('<span style="color:#f0ad4e;">Đang kiểm tra kết nối...</span>');
-	$j.ajax({
-		url: url,
-		type: 'GET',
-		timeout: 8000,
-		success: function(data, textStatus, xhr){
-			var size = data ? data.length : 0;
-			if(size > 100){
-				status.html('<span style="color:#5cb85c;">✅ Link hợp lệ! (HTTP 200 - Dung lượng: ' + Math.round(size/1024) + ' KB)</span>');
-			} else {
-				status.html('<span style="color:#d9534f;">❌ Dữ liệu phản hồi quá nhỏ hoặc rỗng</span>');
-			}
-		},
-		error: function(xhr){
-			var code = xhr.status ? xhr.status : 'Timeout/CORS';
-			status.html('<span style="color:#d9534f;">❌ Kết nối thất bại (Mã lỗi: ' + code + ')</span>');
+	status.html('<span style="color:#f0ad4e;">Đang kiểm tra kết nối (qua router)...</span>');
+	$j.post('/apply.cgi', {
+		'action_mode': ' CheckSingboxSubUrl ',
+		'check_url': url
+	}).done(function(data){
+		var res;
+		try { res = (typeof data === 'string') ? JSON.parse(data) : data; } catch(e) { res = null; }
+		if(res && res.ok){
+			status.html('<span style="color:#5cb85c;">✅ Link hợp lệ! (HTTP ' + res.http_code + ' - Dung lượng: ' + Math.round(res.size/1024) + ' KB)</span>');
+		} else if(res){
+			status.html('<span style="color:#d9534f;">❌ Router không tải được link (Mã lỗi: ' + res.http_code + ')</span>');
+		} else {
+			status.html('<span style="color:#d9534f;">❌ Không đọc được phản hồi từ router</span>');
 		}
+	}).fail(function(){
+		status.html('<span style="color:#d9534f;">❌ Không gửi được yêu cầu kiểm tra tới router</span>');
 	});
 }
 
 function forceUpdateSub(){
+	saveSubList();
 	showLoading();
-	$j.post('/apply.cgi', {
-		'action_mode': ' UpdateSingboxSub ',
-		'next_host': 'Advanced_singbox.asp'
-	}).always(function() {
-		setTimeout(function() {
-			location.reload(); 
-		}, 3000);
-	});
+	document.form.action_mode.value = " Apply ";
+	document.form.action_script.value = "update_singbox_sub";
+	document.form.current_page.value = "/Advanced_singbox.asp";
+	document.form.submit();
 }
 
 function escapeHtml(text){
@@ -276,7 +273,7 @@ function clearLog(){
 	<input type="hidden" name="action_script" value="">
 
 	<!-- Variable ẩn lưu chuỗi JSON danh sách Sub -->
-	<textarea name="scripts.singbox_sub.json" id="singbox_sub_list" style="display:none;"><% nvram_dump_x("scripts.singbox_sub.json",""); %></textarea>
+	<textarea name="singbox_sub_list" id="singbox_sub_list" style="display:none;"><% nvram_dump_x("singbox_sub_list",""); %></textarea>
 
 	<div class="container-fluid">
 	<div class="row-fluid">
@@ -376,6 +373,21 @@ function clearLog(){
 			</table>
 		</td>
 	</tr>
+	<tr>
+		<th>Tự động cập nhật Sub</th>
+		<td>
+			<div class="main_itoggle">
+				<div id="singbox_auto_update_on_of">
+					<input type="checkbox" id="singbox_auto_update_fake" <% nvram_match_x("", "singbox_auto_update", "1", "value=1 checked"); %><% nvram_match_x("", "singbox_auto_update", "0", "value=0"); %> />
+				</div>
+			</div>
+			<div style="position: absolute; margin-left: -10000px;">
+				<input type="radio" value="1" name="singbox_auto_update" id="singbox_auto_update_1" class="input" <% nvram_match_x("", "singbox_auto_update", "1", "checked"); %> /><#checkbox_Yes#>
+				<input type="radio" value="0" name="singbox_auto_update" id="singbox_auto_update_0" class="input" <% nvram_match_x("", "singbox_auto_update", "0", "checked"); %> /><#checkbox_No#>
+			</div>
+			<span style="color:#888; margin-left:10px; display:inline-block; vertical-align:middle;">Tự động kiểm tra & gộp lại Subscription mỗi 3 ngày (chỉ chạy khi sing-box đang bật).</span>
+		</td>
+	</tr>
 	</table>
 
 	<!-- BẢNG 3: TỐI ƯU NÂNG CAO -->
@@ -443,7 +455,7 @@ function clearLog(){
 	<tr id="singbox_config_row" style="display:none;">
 		<td>
 			<span style="color:#888;">Paste your full sing-box config.json here (inbounds/outbounds/route/dns). Invalid JSON will fail to start - check the Run Log tab after Apply.</span><br>
-			<textarea name="singbox_config" id="singbox_config" class="input" style="width:100%; height:400px; font-family:'Courier New',monospace; font-size:12px;"><% nvram_dump_x("scripts.singbox.conf",""); %></textarea>
+			<textarea name="scripts.singbox.conf" id="singbox_config" class="input" style="width:100%; height:400px; font-family:'Courier New',monospace; font-size:12px;"><% nvram_dump_x("scripts.singbox.conf",""); %></textarea>
 		</td>
 	</tr>
 	</table>
