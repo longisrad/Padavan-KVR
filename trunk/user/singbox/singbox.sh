@@ -444,9 +444,6 @@ apply_iptables_mode() {
     sb_mode="$(nv singbox_mode)"
     if [ "$sb_mode" = "1" ]; then
         log "Applying IPTables TPROXY rules for Full LAN Transparent Proxy..."
-
-		# Bổ sung dải IP của Tailscale (100.64.0.0/10) để Sing-Box không chặn Tailscale
-        iptables -t mangle -A SINGBOX -d 100.64.0.0/10 -j RETURN
         
         ip rule add fwmark 1 table 100 2>/dev/null
         ip route add local default dev lo table 100 2>/dev/null
