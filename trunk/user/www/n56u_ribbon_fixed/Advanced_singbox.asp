@@ -288,7 +288,7 @@ function clearLog(){
 	<input type="hidden" name="action_script" value="">
 
 	<!-- Variable ẩn lưu chuỗi JSON danh sách Sub -->
-	<textarea name="singbox_sub_list" id="singbox_sub_list" style="display:none;"><% nvram_dump_x("singbox_sub_list",""); %></textarea>
+	<textarea name="scripts.singbox_sub.json" id="singbox_sub_list" style="display:none;"><% nvram_dump_x("singbox_sub_list",""); %></textarea>
 
 	<div class="container-fluid">
 	<div class="row-fluid">
