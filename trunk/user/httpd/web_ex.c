@@ -3965,6 +3965,14 @@ apply_cgi(const char *url, webs_t wp)
 	}
 	else if (!strcmp(value, " UpdateSingboxSub "))
 	{
+	else if (!strcmp(value, " RunGenLinks "))
+	{
+#if defined(APP_SINGBOX)
+		// Gọi script tạo link client chạy ngầm và tạo file /tmp/singbox_clients.txt
+		system("/etc_ro/singbox/gen_links.sh >/dev/null 2>&1 &");
+#endif
+		return 0;
+	}
 		// Cập nhật lại toàn bộ nguồn Subscription ngay lập tức (bỏ qua chu kỳ 3 ngày),
 		// chạy nền để không block request web (dashboard/reload sẽ mất vài giây).
 #if defined(APP_SINGBOX)
