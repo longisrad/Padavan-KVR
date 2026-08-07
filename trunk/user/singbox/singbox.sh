@@ -364,7 +364,7 @@ generate_config() {
     if [ "$mode" = "0" ]; then
         inbound_block='  "inbounds": [ { "type": "mixed", "tag": "mixed-in", "listen": "0.0.0.0", "listen_port": 7890 } ],'
     else
-        inbound_block='  "inbounds": [ { "type": "tun", "tag": "tun-in", "interface_name": "singbox0", "address": ["172.19.0.1/30"], "mtu": 1400, "auto_route": false, "stack": "system" } ],'
+        inbound_block='  "inbounds": [ { "type": "tun", "tag": "tun-in", "interface_name": "singbox0", "address": ["172.19.0.1/30"], "mtu": 1400, "auto_route": false, "stack": "gvisor" } ],'
     fi
 
     if fetch_all_groups; then
