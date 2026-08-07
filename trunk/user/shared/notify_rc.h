@@ -74,6 +74,7 @@
 #define RCN_RESTART_KOOLPROXY		"restart_koolproxy"
 #define RCN_RESTART_ADGUARDHOME	"restart_adguardhome"
 #define RCN_RESTART_SINGBOX	"restart_singbox"
+#define RCN_UPDATE_SINGBOX_SUB	"update_singbox_sub"
 #define RCN_RESTART_KPUPDATE		"update_kp"
 #define RCN_RESTART_ADBYBY		"restart_adbyby"
 #define RCN_RESTART_UPDATEADB		"update_adb"
