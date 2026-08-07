@@ -63,7 +63,7 @@ jobs:
         # 1. Build file binary
         mkdir -p /opt/images
         go build -trimpath \
-          -tags "with_quic,with_grpc,with_wireguard,with_utls,with_clash_api,with_gvisor" \
+          -tags "with_quic,with_clash_api,with_gvisor,with_dhcp,with_acme,with_v2ray_api,with_embedded_tor,with_tailscale,with_ccm,with_naive_outbound,with_cloudflared" \
           -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=${SB_TAG}" \
           -o /opt/images/sing-box-mipsle.bin \
           ./cmd/sing-box
