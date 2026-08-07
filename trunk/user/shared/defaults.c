@@ -732,6 +732,7 @@ struct nvram_pair router_defaults[] = {
 	{ "singbox_dns_mode", "0" },
 	{ "singbox_mem_limit", "192MiB" },
 	{ "singbox_auto_update", "0" },
+    { "singbox_sub_list", "" },
 	{ "trojan_local_enable", "0" },
 	{ "trojan_local", "/tmp/trojan" },
 	{ "trojan_link", "https://cdn.jsdelivr.net/gh/Padavan_CI/ssp/trojan" },
