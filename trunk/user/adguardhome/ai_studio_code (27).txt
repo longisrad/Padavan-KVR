@@ -1,0 +1,276 @@
+#!/bin/sh
+# AdGuardHome lifecycle manager - written from scratch for Padavan-KVR (NEWIFI3)
+
+BIN_DIR="/tmp/AdGuardHome"
+BIN_PATH="$BIN_DIR/AdGuardHome"
+CFG_DIR="/etc/storage/AdGuardHome"
+CFG_PATH="$CFG_DIR/AdGuardHome.yaml"
+WORK_DIR="/tmp/AdGuardHome/work"
+GH_API="https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest"
+GH_DL="https://github.com/AdguardTeam/AdGuardHome/releases/download"
+ARCH="AdGuardHome_linux_mipsle_softfloat.tar.gz"
+LOG_TAG="AdGuardHome"
+WATCHDOG_FILE="/tmp/script/_opt_script_check"
+
+log() {
+    logger -t "$LOG_TAG" "$1"
+}
+
+is_running() {
+    [ -n "$(pidof AdGuardHome)" ]
+}
+
+fetch_latest_tag() {
+    tag="$(curl -sk --connect-timeout 5 "$GH_API" 2>/dev/null | grep '"tag_name"' | cut -d'"' -f4)"
+    [ -z "$tag" ] && tag="v0.107.78"
+    echo "$tag"
+}
+
+download_binary() {
+    tag="$(fetch_latest_tag)"
+    log "Downloading AdGuardHome ${tag}..."
+    mkdir -p "$BIN_DIR"
+    rm -rf "$BIN_DIR/_dl"
+    mkdir -p "$BIN_DIR/_dl"
+
+    url="${GH_DL}/${tag}/${ARCH}"
+    archive="$BIN_DIR/_dl/agh.tar.gz"
+
+    curl -Lksfo "$archive" --connect-timeout 10 --retry 2 --max-time 120 "$url" \
+        || wget --no-check-certificate -T 20 -t 2 -q -O "$archive" "$url"
+
+    size="$(wc -c < "$archive" 2>/dev/null)"
+    if [ -z "$size" ] || [ "$size" -lt 1000000 ]; then
+        log "Download failed or incomplete (size=${size:-0} bytes)"
+        rm -rf "$BIN_DIR/_dl"
+        return 1
+    fi
+
+    tar -xzf "$archive" -C "$BIN_DIR/_dl" 2>/dev/null
+    extracted="$(find "$BIN_DIR/_dl" -type f -name AdGuardHome | head -n1)"
+    if [ -z "$extracted" ]; then
+        log "Archive extracted but binary not found inside"
+        rm -rf "$BIN_DIR/_dl"
+        return 1
+    fi
+
+    mv "$extracted" "$BIN_PATH"
+    chmod +x "$BIN_PATH"
+    rm -rf "$BIN_DIR/_dl"
+
+    if [ "$("$BIN_PATH" --version 2>&1 | wc -l)" -lt 1 ]; then
+        log "Downloaded binary failed sanity check"
+        rm -f "$BIN_PATH"
+        return 1
+    fi
+
+    log "AdGuardHome ${tag} ready at $BIN_PATH"
+    return 0
+}
+
+ensure_binary() {
+    if [ -x "$BIN_PATH" ] && [ "$("$BIN_PATH" --version 2>&1 | wc -l)" -ge 1 ]; then
+        return 0
+    fi
+    rm -f "$BIN_PATH"
+    download_binary
+}
+
+lan_ips() {
+    ifconfig br0 2>/dev/null | grep "inet addr" | awk -F: '{print $2}' | awk '{print $1}'
+}
+
+target_port() {
+    case "$(nvram get adg_redirect)" in
+        2) echo 53 ;;
+        *) echo 5335 ;;
+    esac
+}
+
+set_agh_port() {
+    port="$1"
+    if [ -s "$CFG_PATH" ]; then
+        sed -i "/^dns:/,/^[a-zA-Z]/{s/^  port: [0-9]*/  port: ${port}/}" "$CFG_PATH"
+    fi
+}
+
+dnsmasq_forward_add() {
+    sed -i '/^port=0$/d; /^no-resolv$/d; /^server=127\.0\.0\.1#5335$/d' /etc/storage/dnsmasq/dnsmasq.conf
+    printf 'no-resolv\nserver=127.0.0.1#5335\n' >> /etc/storage/dnsmasq/dnsmasq.conf
+    /sbin/restart_dhcpd
+    log "Mode 1: dnsmasq (port 53) forwards to AdGuardHome (port 5335)"
+}
+
+dnsmasq_takeover_add() {
+    sed -i '/^port=0$/d; /^no-resolv$/d; /^server=127\.0\.0\.1#5335$/d' /etc/storage/dnsmasq/dnsmasq.conf
+    echo 'port=0' >> /etc/storage/dnsmasq/dnsmasq.conf
+    /sbin/restart_dhcpd
+    log "Mode 2: dnsmasq DNS disabled (DHCP only), AdGuardHome now owns port 53"
+}
+
+dnsmasq_restore_default() {
+    sed -i '/^port=0$/d; /^no-resolv$/d; /^server=127\.0\.0\.1#5335$/d' /etc/storage/dnsmasq/dnsmasq.conf
+    /sbin/restart_dhcpd
+}
+
+apply_redirect_mode() {
+    mode="$(nvram get adg_redirect)"
+    case "$mode" in
+        1) dnsmasq_forward_add ;;
+        2) dnsmasq_takeover_add ;;
+        *) dnsmasq_restore_default; log "DNS redirect mode: None" ;;
+    esac
+}
+
+wait_for_port() {
+    port="$1"
+    tries=0
+    while [ $tries -lt 10 ]; do
+        netstat -uln 2>/dev/null | grep -q ":$port " && return 0
+        sleep 1
+        tries=$((tries + 1))
+    done
+    return 1
+}
+
+install_watchdog() {
+    [ ! -f "$WATCHDOG_FILE" ] && return
+    sed -Ei "/${LOG_TAG}_watchdog/d" "$WATCHDOG_FILE"
+    cat >> "$WATCHDOG_FILE" <<-EOF
+[ -z "\`pidof AdGuardHome\`" ] && $0 start #${LOG_TAG}_watchdog
+	EOF
+}
+
+remove_watchdog() {
+    [ -f "$WATCHDOG_FILE" ] && sed -Ei "/${LOG_TAG}_watchdog/d" "$WATCHDOG_FILE"
+}
+
+generate_default_config() {
+    mkdir -p "$CFG_DIR"
+    cat > "$CFG_PATH" <<-EOF
+http:
+  address: 0.0.0.0:3030
+users:
+  - name: admin
+    password: \$2b\$12\$zgC5mg2IyANRLOi8OHgVvePjzQ0s6uIgjlG1P3.nnzQ3ACXD9czYC
+querylog:
+  enabled: true
+  file_enabled: true
+  interval: 24h
+  size_memory: 100
+stats:
+  enabled: true
+  interval: 24h
+dns:
+  bind_hosts:
+    - 0.0.0.0
+  port: 5335
+  cache_size: 1048576
+  upstream_dns:
+    - 127.0.0.1:5353
+  fallback_dns:
+    - https://dns.cloudflare.com/dns-query
+    - 1.1.1.1
+  bootstrap_dns:
+    - 1.1.1.1
+    - 8.8.8.8
+schema_version: 28
+EOF
+    chmod 644 "$CFG_PATH"
+    log "Generated RAM-optimized default config (login: admin / admin, dashboard on :3030)"
+}
+
+start() {
+    if is_running; then
+        log "Already running, skip"
+        return 0
+    fi
+
+    log "Starting..."
+    mkdir -p "$CFG_DIR"
+    mkdir -p "$WORK_DIR"
+
+    if ! ensure_binary; then
+        log "Cannot start: no working binary"
+        return 1
+    fi
+
+    [ ! -s "$CFG_PATH" ] && generate_default_config
+
+    mode="$(nvram get adg_redirect)"
+    port="$(target_port)"
+    set_agh_port "$port"
+
+    if [ "$mode" = "2" ]; then
+        log "Mode 2 detected: freeing port 53 from dnsmasq first..."
+        dnsmasq_takeover_add
+        sleep 1
+    fi
+
+    # TỐI ƯU CHO NEWIFI 3 (RAM 512MB)
+    export GOMEMLIMIT=128MiB
+    export GOGC=50
+
+    "$BIN_PATH" -c "$CFG_PATH" -w "$WORK_DIR" --no-check-update >/dev/null 2>&1 &
+
+    sleep 3
+    if ! is_running; then
+        log "Process exited immediately after start, check binary/config"
+        [ "$mode" = "2" ] && dnsmasq_restore_default
+        return 1
+    fi
+    log "Process started (PID $(pidof AdGuardHome)), listening on port $port"
+
+    if wait_for_port "$port"; then
+        [ "$mode" != "2" ] && apply_redirect_mode
+    else
+        log "WARNING: AGH did not open port $port in time"
+        [ "$mode" = "2" ] && dnsmasq_restore_default
+    fi
+
+    install_watchdog
+    return 0
+}
+
+stop() {
+    log "Stopping..."
+    remove_watchdog
+    dnsmasq_restore_default
+
+    killall AdGuardHome 2>/dev/null
+
+    tries=0
+    while is_running && [ $tries -lt 5 ]; do
+        sleep 1
+        tries=$((tries + 1))
+    done
+
+    if is_running; then
+        log "Force killing remaining AdGuardHome process..."
+        killall -9 AdGuardHome 2>/dev/null
+    fi
+
+    log "Stopped"
+}
+
+restart() {
+    stop
+    sleep 1
+    start
+}
+
+status() {
+    if is_running; then
+        echo "running"
+    else
+        echo "stopped"
+    fi
+}
+
+case "$1" in
+    start)   start ;;
+    stop)    stop ;;
+    restart) restart ;;
+    status)  status ;;
+    *) echo "Usage: $0 {start|stop|restart|status}" ;;
+esac
