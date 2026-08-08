@@ -1,88 +1,55 @@
 #!/bin/sh
-# ==================== gen_links.sh (All Inbounds + Auto IP) ====================
+# ==================== gen_links.sh (Padavan Compatible) ====================
 
-WORKDIR="/opt/tmp_sb_ext/sing-box-1.13.12-extended-2.4.1-linux-mipsle"
-CONF="$WORKDIR/conf2_final.json"
-OUT_FILE="$WORKDIR/clients.txt"
+CONF="/etc/storage/singbox.conf"
+[ ! -f "$CONF" ] && CONF="/tmp/sing-box/work/config.json"
+OUT_FILE="/tmp/singbox_clients.txt"
+JQ_BIN="/usr/bin/jq"
 
-# 1. Автоматическое определение локального IP адреса роутера
+# Tự động lấy IP LAN Router Padavan
 SERVER_IP=$(nvram get lan_ipaddr 2>/dev/null)
-if [ -z "$SERVER_IP" ]; then
-    # Фолбэк 1: Чтение IP адреса с сетевого интерфейса локальной сети (br0)
-    SERVER_IP=$(ip addr show br0 2>/dev/null | grep -w inet | awk '{print $2}' | cut -d/ -f1)
-fi
-if [ -z "$SERVER_IP" ]; then
-    # Фолбэк 2: Если команды не сработали, ставим классический дефолт
-    SERVER_IP="192.168.1.1" 
-fi
+[ -z "$SERVER_IP" ] && SERVER_IP="192.168.2.1"
 
-echo -e "\033[1;36mDetected Router LAN IP:\033[0m $SERVER_IP"
-echo "Generating links... → $OUT_FILE"
-echo "" > "$OUT_FILE"
+echo "=== SING-BOX CLIENT LINKS (IP Router: $SERVER_IP) ===" > "$OUT_FILE"
+echo "" >> "$OUT_FILE"
 
 b64enc() {
     echo -n "$1" | openssl base64 -A 2>/dev/null | tr -d '\n\r'
 }
 
-# --- 1. Mixed и HTTP ---
-echo -e "\033[1;34m--- HTTP / Mixed Proxy ---\033[0m"
-jq -c '.inbounds[] | select(.type=="mixed" or .type=="http")' "$CONF" | while read -r line; do
-    TAG=$(echo "$line" | jq -r '.tag')
-    PORT=$(echo "$line" | jq -r '.listen_port')
-    TYPE=$(echo "$line" | jq -r '.type')
-    LINK="http://$SERVER_IP:$PORT#$TAG"
-    echo "$LINK" | tee -a "$OUT_FILE"
+if [ ! -f "$CONF" ] || [ ! -x "$JQ_BIN" ]; then
+    echo "Lỗi: Không tìm thấy file cấu hình Sing-box hoặc jq!" >> "$OUT_FILE"
+    exit 1
+fi
+
+# --- 1. HTTP / Mixed Proxy ---
+echo "--- HTTP / Mixed Proxy ---" >> "$OUT_FILE"
+"$JQ_BIN" -c '.inbounds[]? | select(.type=="mixed" or .type=="http")' "$CONF" 2>/dev/null | while read -r line; do
+    TAG=$(echo "$line" | "$JQ_BIN" -r '.tag // "mixed"')
+    PORT=$(echo "$line" | "$JQ_BIN" -r '.listen_port // 7890')
+    echo "http://$SERVER_IP:$PORT#$TAG" >> "$OUT_FILE"
 done
+echo "" >> "$OUT_FILE"
 
 # --- 2. SOCKS5 ---
-echo -e "\033[1;34m--- SOCKS5 ---\033[0m"
-jq -c '.inbounds[] | select(.type=="socks" and .tag!="socks-test")' "$CONF" | while read -r line; do
-    TAG=$(echo "$line" | jq -r '.tag')
-    PORT=$(echo "$line" | jq -r '.listen_port')
-    LINK="socks5://$SERVER_IP:$PORT#$TAG"
-    echo "$LINK" | tee -a "$OUT_FILE"
+echo "--- SOCKS5 Proxy ---" >> "$OUT_FILE"
+"$JQ_BIN" -c '.inbounds[]? | select(.type=="socks" and .tag!="socks-test")' "$CONF" 2>/dev/null | while read -r line; do
+    TAG=$(echo "$line" | "$JQ_BIN" -r '.tag // "socks"')
+    PORT=$(echo "$line" | "$JQ_BIN" -r '.listen_port')
+    echo "socks5://$SERVER_IP:$PORT#$TAG" >> "$OUT_FILE"
 done
+echo "" >> "$OUT_FILE"
 
 # --- 3. Shadowsocks ---
-echo -e "\033[1;34m--- Shadowsocks ---\033[0m"
-jq -c '.inbounds[] | select(.type=="shadowsocks")' "$CONF" | while read -r line; do
-    TAG=$(echo "$line" | jq -r '.tag')
-    PORT=$(echo "$line" | jq -r '.listen_port')
-    METHOD=$(echo "$line" | jq -r '.method')
-    PASS=$(echo "$line" | jq -r '.password')
+echo "--- Shadowsocks ---" >> "$OUT_FILE"
+"$JQ_BIN" -c '.inbounds[]? | select(.type=="shadowsocks")' "$CONF" 2>/dev/null | while read -r line; do
+    TAG=$(echo "$line" | "$JQ_BIN" -r '.tag')
+    PORT=$(echo "$line" | "$JQ_BIN" -r '.listen_port')
+    METHOD=$(echo "$line" | "$JQ_BIN" -r '.method')
+    PASS=$(echo "$line" | "$JQ_BIN" -r '.password')
     AUTH=$(b64enc "$METHOD:$PASS")
-    LINK="ss://$AUTH@$SERVER_IP:$PORT#$TAG"
-    echo "$LINK" | tee -a "$OUT_FILE"
+    echo "ss://$AUTH@$SERVER_IP:$PORT#$TAG" >> "$OUT_FILE"
 done
 
-# --- 4. Hysteria 2 ---
-echo -e "\033[1;34m--- Hysteria 2 ---\033[0m"
-jq -c '.inbounds[] | select(.type=="hysteria2")' "$CONF" | while read -r line; do
-    TAG=$(echo "$line" | jq -r '.tag')
-    PORT=$(echo "$line" | jq -r '.listen_port')
-    PASS=$(echo "$line" | jq -r '.users[0].password // .password')
-    LINK="hy2://$PASS@$SERVER_IP:$PORT?insecure=1#$TAG"
-    echo "$LINK" | tee -a "$OUT_FILE"
-done
-
-# --- 5. VLESS (Если поднят как входящий) ---
-jq -c '.inbounds[] | select(.type=="vless")' "$CONF" | while read -r line; do
-    TAG=$(echo "$line" | jq -r '.tag')
-    PORT=$(echo "$line" | jq -r '.listen_port')
-    UUID=$(echo "$line" | jq -r '.users[0].uuid // .uuid')
-    LINK="vless://$UUID@$SERVER_IP:$PORT?encryption=none&security=none&type=tcp#$TAG"
-    echo -e "\033[1;34m--- VLESS ---\033[0m"
-    echo "$LINK" | tee -a "$OUT_FILE"
-done
-
-# --- 6. Trojan (Если поднят как входящий) ---
-jq -c '.inbounds[] | select(.type=="trojan")' "$CONF" | while read -r line; do
-    TAG=$(echo "$line" | jq -r '.tag')
-    PORT=$(echo "$line" | jq -r '.listen_port')
-    PASS=$(echo "$line" | jq -r '.users[0].password // .password')
-    LINK="trojan://$PASS@$SERVER_IP:$PORT?security=none#$TAG"
-    echo -e "\033[1;34m--- Trojan ---\033[0m"
-    echo "$LINK" | tee -a "$OUT_FILE"
-done
-
-echo -e "\n\033[1;32mDONE! All links saved to $OUT_FILE\033[0m"
+echo "" >> "$OUT_FILE"
+echo "=== HOÀN TẤT TẠO LINK CLIENT ===" >> "$OUT_FILE"
