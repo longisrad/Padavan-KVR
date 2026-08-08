@@ -33,57 +33,6 @@ function initial(){
 	show_menu(5, 30, 0);
 	show_footer();
 	fetchSubListFromRouter();
-	refreshLog();
-}
-
-function refreshLog(){
-	$j.ajax({
-		url: '/update.cgi',
-		type: 'GET',
-		data: {
-			'output': 'nvram_dump',
-			'arg0': 'singbox.log',
-			'_t': new Date().getTime()
-		},
-		dataType: 'text',
-		cache: false,
-		success: function(data){
-			if (data && data.trim() !== "") {
-				$j('#singbox_log_area').val(data);
-			} else {
-				$j.ajax({
-					url: '/update.cgi',
-					type: 'GET',
-					data: {
-						'output': 'nvram_dump',
-						'arg0': 'sing-box.log',
-						'_t': new Date().getTime()
-					},
-					dataType: 'text',
-					cache: false,
-					success: function(data2){
-						if (data2) { $j('#singbox_log_area').val(data2); }
-					}
-				});
-			}
-			scrollLogToBottom();
-		}
-	});
-}
-
-function scrollLogToBottom(){
-	var textarea = document.getElementById('singbox_log_area');
-	if (textarea) { textarea.scrollTop = textarea.scrollHeight; }
-}
-
-function toggleLogPanel(){
-	var row = document.getElementById('singbox_log_row');
-	if (row.style.display === 'none') {
-		row.style.display = '';
-		refreshLog();
-	} else {
-		row.style.display = 'none';
-	}
 }
 
 function fetchSubListFromRouter(){
@@ -241,15 +190,6 @@ function openDashboard(){
 	window.open("http://" + ip + ":9090/ui/#/setup?host=" + ip + "&port=9090", "_blank");
 }
 
-function clearLog(){
-	$j.post('/apply.cgi', {
-		'action_mode': ' ClearSingboxLog ',
-		'next_host': 'Advanced_singbox.asp'
-	}).always(function() {
-		$j('#singbox_log_area').val('');
-		setTimeout(refreshLog, 1500);
-	});
-}
 </script>
 </head>
 
@@ -472,20 +412,6 @@ function clearLog(){
 	</table>
 
 	<!-- BẢNG 5: RUN LOG (KHUNG ẨN / HIỆN GỌN GÀNG) -->
-	<table width="100%" cellpadding="4" cellspacing="0" class="table">
-	<tr><th colspan="2" style="background-color:#756c78;">
-		Sing-box Run Log (Nhật ký hoạt động)
-		<input class="btn btn-mini btn-info" style="float:right; margin-left:5px;" type="button" value="🔄 Refresh Log" onclick="refreshLog();" />
-		<input class="btn btn-mini btn-danger" style="float:right; margin-left:5px;" type="button" value="🗑️ Clear Log" onclick="clearLog();" />
-		<input class="btn btn-mini" style="float:right;" type="button" value="Show/Hide Log" onclick="toggleLogPanel();" />
-	</th></tr>
-	<tr id="singbox_log_row" style="display:none;">
-		<td>
-			<textarea id="singbox_log_area" class="input" style="width:100%; height:350px; font-family:'Courier New',monospace; font-size:12px; background-color:#1e1e1e; color:#00ff00;" readonly="readonly" wrap="off"><% nvram_dump("singbox.log",""); %><% nvram_dump("sing-box.log",""); %></textarea>
-		</td>
-	</tr>
-	</table>
-
 	<div style="margin:10px;">
 		<center><input class="btn btn-primary" style="width:219px" type="button" value="<#CTL_apply#>" onclick="applyRule()" /></center>
 	</div>
