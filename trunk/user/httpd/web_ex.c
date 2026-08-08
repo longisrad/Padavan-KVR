@@ -4077,6 +4077,16 @@ apply_cgi(const char *url, webs_t wp)
 #endif
 		return 0;
 	}
+	else if (!strcmp(value, " GetSingboxSubList "))
+	{
+#if defined(APP_SINGBOX)
+		// Trả nội dung /etc/storage/singbox_sub.json qua đúng cơ chế /apply.cgi
+		// (dùng chung session cookie với toàn bộ web UI), tránh route file tĩnh
+		// riêng yêu cầu HTTP Basic Auth khiến AJAX từ trang bị 401.
+		dump_file(wp, "/etc/storage/singbox_sub.json");
+#endif
+		return 0;
+	}
 	/* ================= KẾT THÚC AJAX CHO SUB_MGR.SH ================= */
 	else if (!strcmp(value, " CleareasytierLog "))
 	{
