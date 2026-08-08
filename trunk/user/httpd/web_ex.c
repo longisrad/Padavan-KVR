@@ -4038,6 +4038,46 @@ apply_cgi(const char *url, webs_t wp)
 #endif
 		return 0;
 	}
+/* ================= BẮT ĐẦU AJAX CHO SUB_MGR.SH ================= */
+	else if (!strcmp(value, " AddSingboxSub "))
+	{
+#if defined(APP_SINGBOX)
+		char *sub_name = websGetVar(wp, "sub_name", "");
+		char *sub_url = websGetVar(wp, "sub_url", "");
+		char cmd[1200];
+		snprintf(cmd, sizeof(cmd), "/etc_ro/singbox/sub_mgr.sh add '%s' '%s'", sub_name, sub_url);
+		system(cmd);
+#endif
+		return 0;
+	}
+	else if (!strcmp(value, " DelSingboxSub "))
+	{
+#if defined(APP_SINGBOX)
+		char *sub_idx = websGetVar(wp, "sub_idx", "");
+		char cmd[256];
+		snprintf(cmd, sizeof(cmd), "/etc_ro/singbox/sub_mgr.sh del '%s'", sub_idx);
+		system(cmd);
+#endif
+		return 0;
+	}
+	else if (!strcmp(value, " ToggleSingboxSub "))
+	{
+#if defined(APP_SINGBOX)
+		char *sub_idx = websGetVar(wp, "sub_idx", "");
+		char cmd[256];
+		snprintf(cmd, sizeof(cmd), "/etc_ro/singbox/sub_mgr.sh toggle '%s'", sub_idx);
+		system(cmd);
+#endif
+		return 0;
+	}
+	else if (!strcmp(value, " PresetSingboxSub "))
+	{
+#if defined(APP_SINGBOX)
+		system("/etc_ro/singbox/sub_mgr.sh preset");
+#endif
+		return 0;
+	}
+	/* ================= KẾT THÚC AJAX CHO SUB_MGR.SH ================= */
 	else if (!strcmp(value, " CleareasytierLog "))
 	{
 #if defined(APP_EASYTIER)
