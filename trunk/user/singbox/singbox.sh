@@ -617,8 +617,11 @@ start() {
     log "Starting..."
     rotate_log
     mkdir -p "$WORK_DIR"
-    
-    rm -f /tmp/sing-box/cache.db*
+
+    # KHÔNG xóa cache.db khi start: cache_file lưu bảng fake-ip <-> domain thật.
+    # Nếu xóa mỗi lần start, client còn giữ fake-ip cũ trong DNS cache (TTL 600s)
+    # sẽ bị lỗi "missing fakeip record" và rớt kết nối cho tới khi domain đó
+    # được resolve lại. Chỉ nên xóa cache thủ công khi thực sự cần debug.
 
     if ! ensure_binary; then
         log "Cannot start: no working binary"
