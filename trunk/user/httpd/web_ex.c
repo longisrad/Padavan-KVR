@@ -5223,6 +5223,15 @@ do_kp_crt_file(const char *url, FILE *stream)
 }
 #endif
 
+#if defined(APP_SINGBOX)
+static void
+do_singbox_sub_file(const char *url, FILE *stream)
+{
+	dump_file(stream, "/etc/storage/singbox_sub.json");
+	fputs("\r\n", stream);
+}
+#endif
+
 struct mime_handler mime_handlers[] = {
 	/* cached javascript files w/o translations */
 	{ "jquery.js", "text/javascript", NULL, NULL, do_file, 0 }, // 2012.06 Eagle23
