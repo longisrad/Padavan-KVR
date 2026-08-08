@@ -81,9 +81,13 @@ function scrollLogToBottom(){
 	if (textarea) { textarea.scrollTop = textarea.scrollHeight; }
 }
 
-/* ĐỌC TRỰC TIẾP TỪ /etc/storage/singbox_sub.json */
+/* ĐỌC QUA /apply.cgi (dùng chung session cookie với add/del/toggle,
+   tránh route file tĩnh /singbox_sub.json yêu cầu HTTP Basic Auth riêng
+   khiến AJAX gọi trực tiếp bị 401 dù đã login web UI) */
 function fetchSubListFromRouter(){
-	$j.get('/singbox_sub.json?_t=' + new Date().getTime(), function(data){
+	$j.post('/apply.cgi', {
+		'action_mode': ' GetSingboxSubList '
+	}).done(function(data){
 		try {
 			subList = (typeof data === 'string') ? JSON.parse(data) : data;
 			if (!Array.isArray(subList)) subList = [];
