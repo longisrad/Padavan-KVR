@@ -1262,6 +1262,7 @@
 			{"singbox_bypass_vn", "", NULL, EVM_RESTART_SINGBOX},
 			{"singbox_adblock", "", NULL, EVM_RESTART_SINGBOX},
 			{"singbox_dns_mode", "", NULL, EVM_RESTART_SINGBOX},
+            {"singbox_dns_redirect", "", NULL, EVM_RESTART_SINGBOX},
 			{"singbox_mem_limit", "", NULL, EVM_RESTART_SINGBOX},
 			{"singbox_auto_update", "", NULL, EVM_RESTART_SINGBOX},
 			{"scripts.singbox.conf", "File", NULL, EVM_RESTART_SINGBOX},
