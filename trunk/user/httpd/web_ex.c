@@ -5276,6 +5276,9 @@ struct mime_handler mime_handlers[] = {
 #if defined(APP_KOOLPROXY)
 	{ "kp_ca.crt", "application/force-download", NULL, NULL, do_kp_crt_file, 1 },
 #endif
+#if defined(APP_SINGBOX)
+	{ "singbox_sub.json", "application/json", no_cache_IE, NULL, do_singbox_sub_file, 1 },
+#endif
 #if defined(APP_SCUT)
 	{ "scutclient.log", "application/force-download", scutclient_log_txt, NULL, do_scutclient_log_file, 1 },
 #endif
