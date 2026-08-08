@@ -187,10 +187,12 @@ ensure_converter() {
 }
 
 build_dns_block() {
+    dns_final_detour="$1"
+    [ -z "$dns_final_detour" ] && dns_final_detour="direct"
     cat <<-EOF
   "dns": {
     "servers": [
-      { "tag": "dns-remote", "type": "tls", "server": "8.8.8.8", "detour": "select" },
+      { "tag": "dns-remote", "type": "tls", "server": "8.8.8.8", "detour": "${dns_final_detour}" },
       { "tag": "dns-direct", "type": "udp", "server": "1.1.1.1", "detour": "direct" },
       { "tag": "dns-fakeip", "type": "fakeip", "inet4_range": "198.18.0.0/15" }
     ],
@@ -211,6 +213,7 @@ build_route_block() {
     sniff_rule=""
     if [ "$rt_mode" != "0" ]; then
         sniff_rule='      { "inbound": "tproxy-in", "action": "sniff" },
+      { "inbound": "dns-in", "action": "sniff" },
 '
     fi
 
@@ -366,7 +369,7 @@ generate_config() {
     else
         inbound_block='  "inbounds": [ 
           { "type": "tproxy", "tag": "tproxy-in", "listen": "0.0.0.0", "listen_port": 7893 },
-          { "type": "direct", "tag": "dns-in", "listen": "127.0.0.1", "listen_port": 5353 }
+          { "type": "direct", "tag": "dns-in", "listen": "0.0.0.0", "listen_port": 5353 }
         ],'
     fi
 
@@ -396,7 +399,7 @@ generate_config() {
         echo "    \"cache_file\": { \"enabled\": true, \"path\": \"/tmp/sing-box/cache.db\" }"
         echo "  },"
         echo "$inbound_block"
-        build_dns_block "$dns_mode"
+        build_dns_block "$final_tag"
         build_route_block "$bypass_vn" "$adblock" "$final_tag" "$mode"
         echo "  \"outbounds\": ["
         echo "$selector_block"
