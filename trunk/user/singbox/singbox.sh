@@ -438,6 +438,27 @@ apply_iptables_mode() {
         iptables -t mangle -A SINGBOX -p udp -j TPROXY --on-port 7893 --tproxy-mark 1
         
         iptables -t mangle -I PREROUTING -i br0 -j SINGBOX 2>/dev/null
+
+        # --- 2. CÔNG TẮC BẬT/TẮT CHUYỂN HƯỚNG DNS (PORT 53 -> 5353) ---
+        dns_redirect="$(nv singbox_dns_redirect)"
+        [ -z "$dns_redirect" ] && dns_redirect="0" # Mặc định là Tắt nếu chưa chọn
+
+        if [ "$dns_redirect" = "1" ]; then
+            log "Đã BẬT công tắc: Tự động chuyển hướng DNS (Port 53 -> 5353)..."
+            iptables -t nat -N SINGBOX_DNS 2>/dev/null
+            iptables -t nat -F SINGBOX_DNS 2>/dev/null
+            iptables -t nat -A SINGBOX_DNS -p udp --dport 53 -j REDIRECT --to-ports 5353
+            iptables -t nat -A SINGBOX_DNS -p tcp --dport 53 -j REDIRECT --to-ports 5353
+            iptables -t nat -I PREROUTING -i br0 -j SINGBOX_DNS 2>/dev/null
+		else
+            log "Công tắc Chuyển hướng DNS đang TẮT (Dùng DNS mặc định của Router)."
+        fi
+
+        log "Kích hoạt TProxy IPSet toàn mạng LAN thành công!"
+    else
+        clean_iptables
+    fi
+}
         log "Kích hoạt TProxy IPSet toàn mạng LAN + Bypass Tailscale thành công!"
     else
         clean_iptables
@@ -448,6 +469,16 @@ clean_iptables() {
     iptables -t mangle -D PREROUTING -i br0 -j SINGBOX 2>/dev/null
     iptables -t mangle -F SINGBOX 2>/dev/null
     iptables -t mangle -X SINGBOX 2>/dev/null
+
+# Xóa NAT REDIRECT DNS
+    iptables -t nat -D PREROUTING -i br0 -j SINGBOX_DNS 2>/dev/null
+    iptables -t nat -F SINGBOX_DNS 2>/dev/null
+    iptables -t nat -X SINGBOX_DNS 2>/dev/null
+
+    while ip rule del fwmark 1 table 100 2>/dev/null; do :; done
+    ip route del local default dev lo table 100 2>/dev/null
+    ipset destroy singbox_bypass 2>/dev/null
+}
     while ip rule del fwmark 1 table 100 2>/dev/null; do :; done
     ip route del local default dev lo table 100 2>/dev/null
     ipset destroy singbox_bypass 2>/dev/null
