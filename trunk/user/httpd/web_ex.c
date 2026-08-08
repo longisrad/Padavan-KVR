@@ -3955,14 +3955,6 @@ apply_cgi(const char *url, webs_t wp)
 		websRedirect(wp, current_url);
 		return 0;
 	}
-	else if (!strcmp(value, " ClearSingboxLog "))
-	{
-#if defined(APP_SINGBOX)
-		unlink("/tmp/singbox.log");
-#endif
-		websRedirect(wp, current_url);
-		return 0;
-	}
 	else if (!strcmp(value, " UpdateSingboxSub "))
 	{
 		// Cập nhật lại toàn bộ nguồn Subscription ngay lập tức (bỏ qua chu kỳ 3 ngày),
