@@ -412,7 +412,9 @@ apply_iptables_mode() {
     if [ "$sb_mode" = "1" ]; then
         log "Applying IPTables TPROXY rules (IPSet Hash Optimized)..."
 
-        modprobe xt_TPROXY nf_tproxy_core xt_socket xt_mark 2>/dev/null
+        for mod in nf_tproxy_core xt_TPROXY xt_socket xt_mark; do
+            modprobe $mod 2>/dev/null
+        done
         if ! lsmod | grep -q "xt_TPROXY"; then
             log "LỖI: không nạp được module xt_TPROXY - TProxy sẽ KHÔNG hoạt động."
         fi
