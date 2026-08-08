@@ -187,7 +187,7 @@ build_dns_block() {
   "dns": {
     "servers": [
       { "tag": "dns-remote", "type": "tls", "server": "8.8.8.8", "detour": "select" },
-      { "tag": "dns-direct", "type": "udp", "server": "223.5.5.5", "detour": "direct" },
+      { "tag": "dns-direct", "type": "udp", "server": "1.1.1.1", "detour": "direct" },
       { "tag": "dns-fakeip", "type": "fakeip", "inet4_range": "198.18.0.0/15" }
     ],
     "rules": [
