@@ -180,7 +180,7 @@ have_jq() {
         fi
     done
 
-    resolved="$(command -v jq 2>/dev/null)"
+    resolved="$(which jq 2>/dev/null)"
     if [ -n "$resolved" ] && [ -x "$resolved" ]; then
         JQ_BIN="$resolved"
         return 0
@@ -356,7 +356,7 @@ fetch_all_groups() {
         if ! "$JQ_BIN" -e '.outbounds' "$cache" >/dev/null 2>&1; then
             log "Sub '$name' không phải JSON chuẩn -> Giải mã link thô bằng converter.lua..."
             ensure_converter
-            if [ -f "/tmp/sing-box/converter.lua" ] && command -v lua >/dev/null 2>&1; then
+            if [ -f "/tmp/sing-box/converter.lua" ] && which lua >/dev/null 2>&1; then
                 cp -f "$cache" /tmp/sing-box/subs_raw.txt
                 cd /tmp/sing-box && lua converter.lua >/dev/null 2>&1
                 if [ -s "/tmp/sing-box/all_nodes.json" ]; then
@@ -512,7 +512,7 @@ clean_iptables() {
 }
 
 install_cron() {
-    if ! command -v cru >/dev/null 2>&1; then
+    if ! which cru >/dev/null 2>&1; then
         log "Không tìm thấy 'cru' trên firmware -> không thể lên lịch tự động cập nhật Sub"
         return 1
     fi
@@ -522,7 +522,7 @@ install_cron() {
 }
 
 remove_cron() {
-    command -v cru >/dev/null 2>&1 && cru d "$CRON_TAG" >/dev/null 2>&1
+    which cru >/dev/null 2>&1 && cru d "$CRON_TAG" >/dev/null 2>&1
 }
 
 sync_cron_state() {

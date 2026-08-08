@@ -4,7 +4,7 @@
 FILE="/etc/storage/singbox_sub.json"
 JQ_BIN="/tmp/sing-box/jq"
 
-[ ! -f "$JQ_BIN" ] && JQ_BIN="$(command -v jq 2>/dev/null)"
+[ ! -x "$JQ_BIN" ] && JQ_BIN="$(which jq 2>/dev/null)"
 [ ! -f "$FILE" ] && echo "[]" > "$FILE"
 
 case "$1" in
