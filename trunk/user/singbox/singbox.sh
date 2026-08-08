@@ -336,9 +336,12 @@ fetch_all_groups() {
 
         echo "$proxies" | "$JQ_BIN" -c '.[]' >> "$GROUP_DIR/all_proxies.jsonl"
 
-        group_outs="$(echo "$proxies" | "$JQ_BIN" -c '[.[].tag] + ["direct"]')"
+        # urltest: tự động chọn node có độ trễ thấp nhất trong group, đo lại mỗi 5 phút.
+        # KHÔNG gộp "direct" vào đây vì direct gần như luôn thắng về latency,
+        # sẽ làm urltest luôn chọn direct thay vì proxy thật -> mất tác dụng.
+        group_outs="$(echo "$proxies" | "$JQ_BIN" -c '[.[].tag]')"
         "$JQ_BIN" -nc --arg tag "$name" --argjson outs "$group_outs" \
-            '{type:"selector", tag:$tag, outbounds:$outs}' >> "$GROUP_DIR/all_selectors.jsonl"
+            '{type:"urltest", tag:$tag, outbounds:$outs, url:"http://www.gstatic.com/generate_204", interval:"5m", tolerance:50}' >> "$GROUP_DIR/all_selectors.jsonl"
 
         "$JQ_BIN" -c --arg t "$name" '. + [$t]' "$GROUP_DIR/group_tags.json" > "$GROUP_DIR/group_tags.json.tmp" \
             && mv "$GROUP_DIR/group_tags.json.tmp" "$GROUP_DIR/group_tags.json"
