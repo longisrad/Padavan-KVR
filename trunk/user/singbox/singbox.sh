@@ -259,9 +259,15 @@ EOF
 }
 
 build_route_block() {
-    bypass_vn="$1"; adblock="$2"; final_tag="$3"
+    bypass_vn="$1"; adblock="$2"; final_tag="$3"; rt_mode="$4"
     rulesets=""
     rules=""
+
+    sniff_rule=""
+    if [ "$rt_mode" != "0" ]; then
+        sniff_rule='      { "inbound": "tproxy-in", "action": "sniff" },
+'
+    fi
 
     if [ "$bypass_vn" = "1" ]; then
         rulesets="${rulesets}    { \"tag\": \"geoip-vn\", \"type\": \"remote\", \"format\": \"binary\", \"url\": \"https://testingcf.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-vn.srs\", \"download_detour\": \"direct\" },
@@ -284,7 +290,7 @@ ${rulesets%,
 }
     ],
     "rules": [
-      { "protocol": "dns", "action": "hijack-dns" },
+${sniff_rule}      { "protocol": "dns", "action": "hijack-dns" },
 ${rules}      { "ip_is_private": true, "outbound": "direct" }
     ],
     "final": "${final_tag}",
@@ -401,7 +407,7 @@ generate_config() {
         inbound_block='  "inbounds": [ { "type": "mixed", "tag": "mixed-in", "listen": "0.0.0.0", "listen_port": 7890 } ],'
     else
         inbound_block='  "inbounds": [ 
-          { "type": "tproxy", "tag": "tproxy-in", "listen": "0.0.0.0", "listen_port": 7893, "sniff": true, "sniff_override_destination": true },
+          { "type": "tproxy", "tag": "tproxy-in", "listen": "0.0.0.0", "listen_port": 7893 },
           { "type": "direct", "tag": "dns-in", "listen": "127.0.0.1", "listen_port": 5353 }
         ],'
     fi
@@ -430,7 +436,7 @@ generate_config() {
         echo "  },"
         echo "$inbound_block"
         build_dns_block "$dns_mode"
-        build_route_block "$bypass_vn" "$adblock" "$final_tag"
+        build_route_block "$bypass_vn" "$adblock" "$final_tag" "$mode"
         echo "  \"outbounds\": ["
         echo "$selector_block"
         echo "$group_selectors_body"
@@ -449,7 +455,19 @@ apply_iptables_mode() {
     sb_mode="$(nv singbox_mode)"
     if [ "$sb_mode" = "1" ]; then
         log "Applying IPTables TPROXY rules for Full LAN Transparent Proxy..."
-        
+
+        # Nạp module kernel cần thiết cho TPROXY - firmware nhúng thường
+        # KHÔNG tự động modprobe khi iptables gọi target TPROXY, phải nạp tay trước.
+        modprobe xt_TPROXY 2>/dev/null
+        modprobe nf_tproxy_core 2>/dev/null
+        modprobe xt_socket 2>/dev/null
+        modprobe xt_mark 2>/dev/null
+        if ! lsmod | grep -q "xt_TPROXY"; then
+            log "LỖI: không nạp được module xt_TPROXY - kernel firmware này có thể chưa compile TPROXY support. TProxy sẽ KHÔNG hoạt động."
+        fi
+
+        # Xoá rule fwmark cũ (nếu có) để tránh add trùng lặp mỗi lần restart
+        while ip rule del fwmark 1 table 100 2>/dev/null; do :; done
         ip rule add fwmark 1 table 100 2>/dev/null
         ip route add local default dev lo table 100 2>/dev/null
 
@@ -481,7 +499,7 @@ clean_iptables() {
     iptables -t mangle -D PREROUTING -i br0 -j SINGBOX 2>/dev/null
     iptables -t mangle -F SINGBOX 2>/dev/null
     iptables -t mangle -X SINGBOX 2>/dev/null
-    ip rule del fwmark 1 table 100 2>/dev/null
+    while ip rule del fwmark 1 table 100 2>/dev/null; do :; done
     ip route del local default dev lo table 100 2>/dev/null
 }
 
