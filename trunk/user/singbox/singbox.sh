@@ -6,6 +6,7 @@ export PATH="/opt/sbin:/opt/bin:$PATH"
 BIN_DIR="/tmp/sing-box"
 BIN_PATH="$BIN_DIR/sing-box"
 CFG_PATH="/etc/storage/singbox.conf"
+CFG_MARKER="/tmp/sing-box/singbox.conf.autogen"
 WORK_DIR="/tmp/sing-box/work"
 LOG_FILE="/tmp/singbox.log"
 LOG_TAG="sing-box"
@@ -411,6 +412,18 @@ generate_config() {
     # dung THUC SU bam chon va Luu tren webui.
     [ -z "$dns_mode" ] && dns_mode="1"
 
+    # Rang buoc dns_mode theo tung Proxy Mode (khop voi lua chon that su hop
+    # le tren webui):
+    #   - Mixed (mode=0): CHI hop le Direct hoac DoH. Mixed chi mo mixed-in
+    #     (khong co dns-in), nen FakeIP khong co inbound nao de nhan DNS that
+    #     su hoat dung dung nghia - neu nvram con luu FakeIP tu luc truoc
+    #     dang o TProxy, ep ve Direct de tranh cau hinh vo nghia.
+    #   - TProxy (mode=1): ca 3 (Direct/FakeIP/DoH) deu hop le, giu nguyen.
+    if [ "$mode" = "0" ] && [ "$dns_mode" = "1" ]; then
+        log "Mixed mode khong ho tro FakeIP (khong co dns-in) -> tu dong chuyen dns_mode ve Direct"
+        dns_mode="0"
+    fi
+
     if [ "$mode" = "0" ]; then
         inbound_block='  "inbounds": [ { "type": "mixed", "tag": "mixed-in", "listen": "0.0.0.0", "listen_port": 7890 } ],'
     else
@@ -458,6 +471,12 @@ generate_config() {
         echo "}"
     } > "$CFG_PATH"
 
+    # Danh dau day la config TU DONG SINH (khong phai ban tu tay dan vao o
+    # Mode 3), de ensure_config() phat hien va canh bao neu sau nay ban
+    # chuyen sang Custom JSON ma chua thay the noi dung that su.
+    mkdir -p "$(dirname "$CFG_MARKER")" 2>/dev/null
+    touch "$CFG_MARKER"
+
     log "Đã sinh config.json TProxy (mode=$mode, mem_limit=$mem_limit, bypass_vn=$bypass_vn, adblock=$adblock, dns_mode=$dns_mode, final=$final_tag)"
 }
 
@@ -491,6 +510,11 @@ apply_iptables_mode() {
         iptables -t mangle -A SINGBOX -p tcp -j TPROXY --on-port 7893 --tproxy-mark 1
         iptables -t mangle -A SINGBOX -p udp -j TPROXY --on-port 7893 --tproxy-mark 1
         
+        # Xoa het jump-rule cu (neu co, VD do sing-box tung bi crash roi
+        # watchdog tu restart ma khong qua stop()/clean_iptables) truoc khi
+        # chen lai, tranh tich lap trung nhieu ban PREROUTING -> SINGBOX qua
+        # cac lan restart.
+        while iptables -t mangle -D PREROUTING -i br0 -j SINGBOX 2>/dev/null; do :; done
         iptables -t mangle -I PREROUTING -i br0 -j SINGBOX 2>/dev/null
 
         # --- 2. CÔNG TẮC BẬT/TẮT CHUYỂN HƯỚNG DNS (PORT 53 -> 5353) ---
@@ -503,6 +527,7 @@ apply_iptables_mode() {
             iptables -t nat -F SINGBOX_DNS 2>/dev/null
             iptables -t nat -A SINGBOX_DNS -p udp --dport 53 -j REDIRECT --to-ports 5353
             iptables -t nat -A SINGBOX_DNS -p tcp --dport 53 -j REDIRECT --to-ports 5353
+            while iptables -t nat -D PREROUTING -i br0 -j SINGBOX_DNS 2>/dev/null; do :; done
             iptables -t nat -I PREROUTING -i br0 -j SINGBOX_DNS 2>/dev/null
         else
             log "Công tắc Chuyển hướng DNS đang TẮT (Dùng DNS mặc định của Router)."
@@ -510,17 +535,21 @@ apply_iptables_mode() {
 
         log "Kích hoạt TProxy IPSet toàn mạng LAN + Bypass Tailscale thành công!"
     else
+        # Mixed mode (hoac Custom JSON): khong dung TPROXY, va Chuyen huong
+        # DNS (53->5353) cung KHONG duoc ap dung o day vi chi co dns-in o
+        # TProxy mode. clean_iptables() se don sach moi rule TPROXY/redirect
+        # con sot lai tu lan chay TProxy truoc do (neu co).
         clean_iptables
     fi
 }
 
 clean_iptables() {
-    iptables -t mangle -D PREROUTING -i br0 -j SINGBOX 2>/dev/null
+    while iptables -t mangle -D PREROUTING -i br0 -j SINGBOX 2>/dev/null; do :; done
     iptables -t mangle -F SINGBOX 2>/dev/null
     iptables -t mangle -X SINGBOX 2>/dev/null
 
     # Xóa NAT REDIRECT DNS
-    iptables -t nat -D PREROUTING -i br0 -j SINGBOX_DNS 2>/dev/null
+    while iptables -t nat -D PREROUTING -i br0 -j SINGBOX_DNS 2>/dev/null; do :; done
     iptables -t nat -F SINGBOX_DNS 2>/dev/null
     iptables -t nat -X SINGBOX_DNS 2>/dev/null
 
@@ -616,7 +645,15 @@ ensure_config() {
             ;;
         2)
             if [ ! -s "$CFG_PATH" ]; then
-                log "Mode 3 (Custom JSON) nhưng $CFG_PATH rỗng - hãy dán config vào ô Raw JSON trên webui rồi Apply lại."
+                log "CẢNH BÁO: Mode 3 (Custom JSON) nhưng $CFG_PATH rỗng - hãy dán config vào ô Raw JSON trên webui rồi Apply lại."
+            elif [ -f "$CFG_MARKER" ] && [ ! "$CFG_PATH" -nt "$CFG_MARKER" ]; then
+                # $CFG_PATH chua duoc dung (mtime) ke tu lan generate_config()
+                # tu dong sinh gan nhat -> day van la config cua Mode 0/1 cu,
+                # KHONG phai JSON tuy chinh that su ban da dan+luu. Neu cu
+                # chay tiep, sing-box se khoi dong voi inbound/route cua mode
+                # cu trong khi iptables TPROXY da bi go bo o Mode 3 -> process
+                # song nhung khong nhan duoc traffic nao, nhin giong "mat mang".
+                log "CẢNH BÁO: Mode 3 (Custom JSON) nhưng $CFG_PATH vẫn là config TỰ ĐỘNG SINH từ Mode Mixed/TProxy trước đó, CHƯA được thay bằng JSON tùy chỉnh thật. Vào WebUI, dán JSON thật vào ô Raw Config rồi Apply lại trước khi dùng Mode 3 - nếu không sing-box sẽ chạy nhưng KHÔNG nhận được traffic nào (vì iptables TPROXY đã bị gỡ bỏ ở Mode 3)."
             fi
             ;;
         *)
@@ -639,6 +676,7 @@ install_watchdog() {
     sed -i '/sing-box/d' "$WATCHDOG_FILE" 2>/dev/null
     cat >> "$WATCHDOG_FILE" <<-EOF
 [ -z "\`pidof sing-box\`" ] && $0 start #sing-box_watchdog
+$0 fix_resolv_conf #sing-box_watchdog
 	EOF
 }
 
@@ -646,10 +684,30 @@ remove_watchdog() {
     [ -f "$WATCHDOG_FILE" ] && sed -i '/sing-box/d' "$WATCHDOG_FILE" 2>/dev/null
 }
 
+fix_resolv_conf() {
+    # Go "nameserver 127.0.0.1" khoi resolv.conf cua chinh router (neu co).
+    # Ly do: cac tien trinh chay ngay tren router (AGH tu update filter,
+    # curl/wget tai sub/geoip/binary ben duoi) se hoi DNS qua 127.0.0.1 -> AGH
+    # -> upstream 127.0.0.1:5353 (sing-box) -> nhan ve fake-ip (198.18.x.x).
+    # Nhung traffic tu than cua router KHONG di qua br0 nen khong duoc TPROXY
+    # dich nguoc fake-ip -> domain that, ket noi toi fake-ip se luon timeout.
+    # Router tu dung thang DNS that (tu ISP/nvram) la du, khong can fake-ip.
+    #
+    # Goi ham nay o ca start() lan 1 dong watchdog dinh ky (khong chi luc
+    # start), vi PPPoE/DHCP client co the tu ghi de lai resolv.conf khi
+    # WAN reconnect ma khong lien quan gi toi viec sing-box co restart hay
+    # khong - neu chi sua luc start() thi giua 2 lan restart, dong nay co
+    # the bi WAN reconnect ghi de lai ma khong ai phat hien.
+    if [ -f /etc/resolv.conf ] && grep -q "^nameserver 127.0.0.1$" /etc/resolv.conf; then
+        sed -i '/^nameserver 127.0.0.1$/d' /etc/resolv.conf
+        log "Da go nameserver 127.0.0.1 khoi /etc/resolv.conf de tranh router tu dinh fake-ip"
+    fi
+}
+
 start() {
     if [ "$(nv singbox_enable)" != "1" ]; then
-        log "singbox_enable=0 -> khong khoi dong, chuyen sang stop()"
-        stop
+        log "singbox_enable=0 -> khong khoi dong, chuyen sang stop() + don RAM tmpfs"
+        stop purge
         return 0
     fi
 
@@ -667,17 +725,7 @@ start() {
     # sẽ bị lỗi "missing fakeip record" và rớt kết nối cho tới khi domain đó
     # được resolve lại. Chỉ nên xóa cache thủ công khi thực sự cần debug.
 
-    # Gỡ "nameserver 127.0.0.1" khỏi resolv.conf của chính router (nếu có).
-    # Lý do: các tiến trình chạy ngay trên router (AGH tự update filter,
-    # curl/wget tải sub/geoip/binary bên dưới) sẽ hỏi DNS qua 127.0.0.1 -> AGH
-    # -> upstream 127.0.0.1:5353 (sing-box) -> nhận về fake-ip (198.18.x.x).
-    # Nhưng traffic tự thân của router KHÔNG đi qua br0 nên không được TPROXY
-    # dịch ngược fake-ip -> domain thật, kết nối tới fake-ip sẽ luôn timeout.
-    # Router tự dùng thẳng DNS thật (từ ISP/nvram) là đủ, không cần fake-ip.
-    if [ -f /etc/resolv.conf ] && grep -q "^nameserver 127.0.0.1$" /etc/resolv.conf; then
-        sed -i '/^nameserver 127.0.0.1$/d' /etc/resolv.conf
-        log "Da go nameserver 127.0.0.1 khoi /etc/resolv.conf de tranh router tu dinh fake-ip"
-    fi
+    fix_resolv_conf
 
     if ! ensure_binary; then
         log "Cannot start: no working binary"
@@ -708,6 +756,12 @@ start() {
 }
 
 stop() {
+    # $1 = "purge" -> don sach ca cache RAM tmpfs (binary, dashboard, cache.db,
+    # group cache), dung khi tat han sing-box (singbox_enable=0). Restart()
+    # thuong (doi mode, cap nhat sub, watchdog hoi phuc) KHONG purge, de giu
+    # cache cho lan khoi dong lai sau nhanh hon, khong phai tai lai tu GitHub.
+    purge="$1"
+
     log "Stopping..."
     remove_watchdog
     remove_cron
@@ -724,6 +778,11 @@ stop() {
     if is_running; then
         log "Force killing remaining sing-box process..."
         killall -9 sing-box 2>/dev/null
+    fi
+
+    if [ "$purge" = "purge" ]; then
+        log "Đang dọn cache RAM (tmpfs /tmp/sing-box): binary, dashboard, cache.db, group cache..."
+        rm -rf /tmp/sing-box
     fi
 
     log "Stopped"
@@ -749,5 +808,6 @@ case "$1" in
     restart)    restart ;;
     status)     status ;;
     update_sub) rotate_log; update_sub "$2" ;;
-    *) echo "Usage: $0 {start|stop|restart|status|update_sub [force]}" ;;
+    fix_resolv_conf) fix_resolv_conf ;;
+    *) echo "Usage: $0 {start|stop|restart|status|update_sub [force]|fix_resolv_conf}" ;;
 esac
