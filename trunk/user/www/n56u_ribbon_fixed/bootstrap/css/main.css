@@ -1,6 +1,6 @@
 body{
     /* background: url("../img/bg/wood.jpg") repeat scroll center top transparent; */
-    background: url("../img/bg/long.jpg") no-repeat scroll center top transparent;
+    background: url("../img/bg/wood1.jpg") no-repeat scroll center top transparent;
     background-size: cover;  /* 使背景图像覆盖整个页面，保持其比例，避免出现拼接 */
     background-color: #282828;
     overflow-y: scroll;
@@ -35,7 +35,7 @@ body.body_iframe{
 }
 
 #logo {  
-    background-image: url("../img/asus_logo.png");
+    background-image: url("../img/asus_logo1.png");
     width: 150px;
     height: 71px;
     margin-top: 30px;
