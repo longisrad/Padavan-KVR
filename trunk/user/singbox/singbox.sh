@@ -249,6 +249,15 @@ build_route_block() {
     rulesets=""
     rules=""
 
+    # default_domain_resolver phai tro toi 1 tag CO THAT SU ton tai trong
+    # dns.servers cua build_dns_block() - moi nhanh dns_mode khai bao tag
+    # khac nhau (Direct: dns-direct, DoH: dns-doh, FakeIP: dns-remote/
+    # dns-direct/dns-fakeip), khong the dung chung 1 tag co dinh cho ca 3.
+    case "$dns_mode" in
+    2) default_resolver_tag="dns-doh" ;;
+    *) default_resolver_tag="dns-direct" ;;
+    esac
+
     # Sniff SNI/HTTP-Host de biet domain cho rule bypass_vn/adblock (dua vao
     # geosite/geoip theo domain). Can cho CA 2 mode, khong chi TProxy:
     #   - Mixed (mixed-in): hau het app/browser tu resolve DNS bang resolver
@@ -317,7 +326,7 @@ ${resolve_rule}${rules}      { "ip_is_private": true, "outbound": "direct" }
     ],
     "final": "${final_tag}",
     "auto_detect_interface": true,
-    "default_domain_resolver": "dns-direct"
+    "default_domain_resolver": "${default_resolver_tag}"
   },
 EOF
 }
