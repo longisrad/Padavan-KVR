@@ -47,7 +47,7 @@ rotate_log() {
     fi
 }
 
-ASSET_NAME="linux-mipsle-softfloat-compressed"
+ASSET_NAME="linux-mipsle-softfloat"
 
 download_binary() {
     log "Đang tải sing-box từ ${REPO} về RAM (/tmp/sing-box)..."
