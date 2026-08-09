@@ -316,7 +316,8 @@ ${sniff_rule}      { "protocol": "dns", "action": "hijack-dns" },
 ${resolve_rule}${rules}      { "ip_is_private": true, "outbound": "direct" }
     ],
     "final": "${final_tag}",
-    "auto_detect_interface": true
+    "auto_detect_interface": true,
+    "default_domain_resolver": "dns-direct"
   },
 EOF
 }
