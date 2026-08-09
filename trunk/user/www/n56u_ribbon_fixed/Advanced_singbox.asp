@@ -33,6 +33,7 @@ function initial(){
 	show_menu(5, 30, 0);
 	show_footer();
 	fetchSubListFromRouter();
+	toggleDnsDependentRows();
 }
 
 function fetchSubListFromRouter(){
@@ -190,6 +191,12 @@ function openDashboard(){
 	window.open("http://" + ip + ":9090/ui/#/setup?host=" + ip + "&port=9090", "_blank");
 }
 
+function toggleDnsDependentRows(){
+	var isFakeIp = ($j('#singbox_dns_mode_select').val() === '1');
+	$j('#singbox_bypass_vn_row').toggle(isFakeIp);
+	$j('#singbox_adblock_row').toggle(isFakeIp);
+}
+
 </script>
 </head>
 
@@ -264,7 +271,7 @@ function openDashboard(){
 		<td>
 			<select name="singbox_mode" class="input">
 				<option value="0" <% nvram_match_x("","singbox_mode","0","selected"); %>>Mode 1: Mixed Proxy (Port 7890 - Chỉnh thủ công từng máy)</option>
-				<option value="1" <% nvram_match_x("","singbox_mode","1","selected"); %>>Mode 2: TProxy Mode (Toàn mạng LAN - Tốc độ cao 200-300Mbps)</option>
+				<option value="1" <% nvram_match_x("","singbox_mode","1","selected"); %>>Mode 2: TProxy Mode (Toàn mạng LAN)</option>
 				<option value="2" <% nvram_match_x("","singbox_mode","2","selected"); %>>Mode 3: Custom JSON (Dùng cấu hình bên dưới)</option>
 			</select>
 		</td>
@@ -284,7 +291,7 @@ function openDashboard(){
 		<th width="30%">Thêm Sub mới</th>
 		<td>
 			<div style="margin-bottom:6px;">
-				<input type="text" id="input_sub_name" class="input" style="width:38%;" placeholder="Tên Nhóm (VD: 🇻🇳 VIP Viettel)">
+				<input type="text" id="input_sub_name" class="input" style="width:38%;" placeholder="Tên Nhóm">
 				<input type="text" id="input_sub_url" class="input" style="width:54%;" placeholder="Link Subscription (https://...)">
 			</div>
 			<div>
@@ -331,7 +338,17 @@ function openDashboard(){
 	<table width="100%" cellpadding="4" cellspacing="0" class="table">
 	<tr><th colspan="2" style="background-color:#756c78;">Optimization & Advanced Settings</th></tr>
 	<tr>
-		<th width="30%">Bypass IP/Tên miền VN</th>
+		<th width="30%">Chế độ DNS (DNS Mode)</th>
+		<td>
+			<select name="singbox_dns_mode" id="singbox_dns_mode_select" class="input" onchange="toggleDnsDependentRows();">
+				<option value="0" <% nvram_match_x("","singbox_dns_mode","0","selected"); %>>Direct (Khong ma hoa, khong fake-ip)</option>
+				<option value="1" <% nvram_match_x("","singbox_dns_mode","1","selected"); %>>FakeIP Cổng 5353 (Mặc định - Hỗ trợ AdGuard Home & Chống rò rỉ DNS)</option>
+				<option value="2" <% nvram_match_x("","singbox_dns_mode","2","selected"); %>>DoH (Cloudflare / Google Secure DNS)</option>
+			</select>
+		</td>
+	</tr>
+	<tr id="singbox_bypass_vn_row">
+		<th>Bypass IP/Tên miền VN</th>
 		<td>
 			<div class="main_itoggle">
 				<div id="singbox_bypass_vn_on_of">
@@ -345,7 +362,7 @@ function openDashboard(){
 			<span style="color:#888; margin-left:10px; display:inline-block; vertical-align:middle;">Bật để IP/Web Việt Nam đi thẳng (không qua VPN) giúp tối ưu tốc độ.</span>
 		</td>
 	</tr>
-	<tr>
+	<tr id="singbox_adblock_row">
 		<th>Chặn quảng cáo (AdBlock)</th>
 		<td>
 			<div class="main_itoggle">
@@ -357,6 +374,17 @@ function openDashboard(){
 				<input type="radio" value="1" name="singbox_adblock" id="singbox_adblock_1" class="input" <% nvram_match_x("", "singbox_adblock", "1", "checked"); %> /><#checkbox_Yes#>
 				<input type="radio" value="0" name="singbox_adblock" id="singbox_adblock_0" class="input" <% nvram_match_x("", "singbox_adblock", "0", "checked"); %> /><#checkbox_No#>
 			</div>
+		</td>
+	</tr>
+	<tr>
+		<th>Giới hạn RAM (Go Runtime)</th>
+		<td>
+			<select name="singbox_mem_limit" class="input">
+				<option value="64MiB" <% nvram_match_x("","singbox_mem_limit","64MiB","selected"); %>>64 MB</option>
+				<option value="128MiB" <% nvram_match_x("","singbox_mem_limit","128MiB","selected"); %>>128 MB</option>
+				<option value="192MiB" <% nvram_match_x("","singbox_mem_limit","192MiB","selected"); %>>192 MB</option>
+				<option value="256MiB" <% nvram_match_x("","singbox_mem_limit","256MiB","selected"); %>>256 MB</option>
+			</select>
 		</td>
 	</tr>
 	<tr>
@@ -372,27 +400,6 @@ function openDashboard(){
 				<input type="radio" value="0" name="singbox_dns_redirect" id="singbox_dns_redirect_0" class="input" <% nvram_match_x("", "singbox_dns_redirect", "0", "checked"); %> /><#checkbox_No#>
 			</div>
 			<span style="color:#888; margin-left:10px; display:inline-block; vertical-align:middle;">Bật để bẻ toàn bộ truy vấn DNS cổng 53 của các máy con LAN về cổng 5353 cho Sing-box xử lý.</span>
-		</td>
-	</tr>
-	<tr>
-		<th>Chế độ DNS (DNS Mode)</th>
-		<td>
-			<select name="singbox_dns_mode" class="input">
-				<option value="0" <% nvram_match_x("","singbox_dns_mode","0","selected"); %>>Direct (Mặc định)</option>
-				<option value="1" <% nvram_match_x("","singbox_dns_mode","1","selected"); %>>FakeIP Cổng 5353 (Hỗ trợ AdGuard Home & Chống rò rỉ DNS)</option>
-				<option value="2" <% nvram_match_x("","singbox_dns_mode","2","selected"); %>>DoH (Cloudflare / Google Secure DNS)</option>
-			</select>
-		</td>
-	</tr>
-	<tr>
-		<th>Giới hạn RAM (Go Runtime)</th>
-		<td>
-			<select name="singbox_mem_limit" class="input">
-				<option value="64MiB" <% nvram_match_x("","singbox_mem_limit","64MiB","selected"); %>>64 MB (Cho Router RAM 128MB)</option>
-				<option value="128MiB" <% nvram_match_x("","singbox_mem_limit","128MiB","selected"); %>>128 MB (Cho Router RAM 256MB)</option>
-				<option value="192MiB" <% nvram_match_x("","singbox_mem_limit","192MiB","selected"); %>>192 MB (Khuyên dùng cho NEWIFI3 RAM 512MB)</option>
-				<option value="256MiB" <% nvram_match_x("","singbox_mem_limit","256MiB","selected"); %>>256 MB (Tối đa)</option>
-			</select>
 		</td>
 	</tr>
 	</table>
