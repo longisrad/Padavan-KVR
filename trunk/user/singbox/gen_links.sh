@@ -1,8 +1,14 @@
 #!/bin/sh
 # ==================== gen_links.sh (Padavan Compatible) ====================
 
-CONF="/etc/storage/singbox.conf"
-[ ! -f "$CONF" ] && CONF="/tmp/sing-box/work/config.json"
+CONF=""
+for p in "/tmp/singbox/config.json" "/etc/storage/singbox/config.json" "/etc/storage/scripts/singbox.conf" "/etc/storage/singbox.conf" "/tmp/sing-box/work/config.json"; do
+    if [ -f "$p" ]; then
+        CONF="$p"
+        break
+    fi
+done
+
 OUT_FILE="/tmp/singbox_clients.txt"
 JQ_BIN="/usr/bin/jq"
 
@@ -17,8 +23,8 @@ b64enc() {
     echo -n "$1" | openssl base64 -A 2>/dev/null | tr -d '\n\r'
 }
 
-if [ ! -f "$CONF" ] || [ ! -x "$JQ_BIN" ]; then
-    echo "Lỗi: Không tìm thấy file cấu hình Sing-box hoặc jq!" >> "$OUT_FILE"
+if [ -z "$CONF" ] || [ ! -x "$JQ_BIN" ]; then
+    echo "Lỗi: Không tìm thấy file cấu hình Sing-box hoặc không tìm thấy binary jq!" >> "$OUT_FILE"
     exit 1
 fi
 
