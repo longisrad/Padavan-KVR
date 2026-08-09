@@ -623,6 +623,18 @@ start() {
     # sẽ bị lỗi "missing fakeip record" và rớt kết nối cho tới khi domain đó
     # được resolve lại. Chỉ nên xóa cache thủ công khi thực sự cần debug.
 
+    # Gỡ "nameserver 127.0.0.1" khỏi resolv.conf của chính router (nếu có).
+    # Lý do: các tiến trình chạy ngay trên router (AGH tự update filter,
+    # curl/wget tải sub/geoip/binary bên dưới) sẽ hỏi DNS qua 127.0.0.1 -> AGH
+    # -> upstream 127.0.0.1:5353 (sing-box) -> nhận về fake-ip (198.18.x.x).
+    # Nhưng traffic tự thân của router KHÔNG đi qua br0 nên không được TPROXY
+    # dịch ngược fake-ip -> domain thật, kết nối tới fake-ip sẽ luôn timeout.
+    # Router tự dùng thẳng DNS thật (từ ISP/nvram) là đủ, không cần fake-ip.
+    if [ -f /etc/resolv.conf ] && grep -q "^nameserver 127.0.0.1$" /etc/resolv.conf; then
+        sed -i '/^nameserver 127.0.0.1$/d' /etc/resolv.conf
+        log "Da go nameserver 127.0.0.1 khoi /etc/resolv.conf de tranh router tu dinh fake-ip"
+    fi
+
     if ! ensure_binary; then
         log "Cannot start: no working binary"
         return 1
