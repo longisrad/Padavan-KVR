@@ -23,9 +23,8 @@ CRON_FILE="/etc/storage/cron/crontabs/$(nvram get http_username 2>/dev/null)"
 [ -z "$CRON_FILE" ] || [ ! -f "$CRON_FILE" ] && CRON_FILE="/etc/storage/cron/crontabs/admin"
 
 # Cấu hình Repo và tên Asset
-REPO="longisrad/Padavan-KVR"
+REPO="shtorm-7/sing-box-extended"
 GH_API="https://api.github.com/repos/${REPO}/releases/latest"
-ASSET_NAME="sing-box-mipsle.bin"
 
 # Sử dụng trực tiếp jq đã tích hợp trong Firmware
 JQ_BIN="/usr/bin/jq"
