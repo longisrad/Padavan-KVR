@@ -3973,6 +3973,14 @@ apply_cgi(const char *url, webs_t wp)
 #endif
 		return 0;
 	}
+	else if (!strcmp(value, " GetSingboxClients "))
+	{
+#if defined(APP_SINGBOX)
+		// Đọc trực tiếp nội dung /tmp/singbox_clients.txt trả về cho AJAX ASP
+		dump_file(wp, "/tmp/singbox_clients.txt");
+#endif
+		return 0;
+    }
 	else if (!strcmp(value, " CheckSingboxSubUrl "))
 	{
 		// Kiểm tra link Subscription NGAY TỪ ROUTER (qua curl) thay vì để trình
