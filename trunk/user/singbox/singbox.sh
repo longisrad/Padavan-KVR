@@ -188,8 +188,44 @@ ensure_converter() {
 
 build_dns_block() {
     dns_final_detour="$1"
+    dns_mode="$2"
     [ -z "$dns_final_detour" ] && dns_final_detour="direct"
-    cat <<-EOF
+    [ -z "$dns_mode" ] && dns_mode="1"
+
+    case "$dns_mode" in
+    0)
+        # Direct: KHONG fake-ip. Tra ve IP that qua UDP thuan (khong ma hoa).
+        # He qua: route theo domain (bypass_vn/adblock geosite) mat do chinh
+        # xac tuyet doi cua fake-ip, phai dua vao sniff SNI/HTTP-Host + geoip
+        # theo IP that. Uu diem: khong con bug "missing fakeip record" hay
+        # cac tien trinh tren router (AGH, curl) tu dinh bay fake-ip nua, vi
+        # moi IP tra ve deu la IP that, dinh tuyen duoc binh thuong.
+        cat <<-EOF
+  "dns": {
+    "servers": [
+      { "tag": "dns-direct", "type": "udp", "server": "1.1.1.1", "detour": "direct" }
+    ],
+    "final": "dns-direct",
+    "independent_cache": true
+  },
+EOF
+        ;;
+    2)
+        # DoH: giong Direct (khong fake-ip, tra IP that) nhung query duoc ma
+        # hoa qua HTTPS toi Cloudflare, ISP khong soi duoc domain dang tra.
+        cat <<-EOF
+  "dns": {
+    "servers": [
+      { "tag": "dns-doh", "type": "https", "server": "1.1.1.1", "detour": "direct" }
+    ],
+    "final": "dns-doh",
+    "independent_cache": true
+  },
+EOF
+        ;;
+    *)
+        # FakeIP (mac dinh, dns_mode=1): giu nguyen logic da test on dinh.
+        cat <<-EOF
   "dns": {
     "servers": [
       { "tag": "dns-remote", "type": "tls", "server": "8.8.8.8", "detour": "${dns_final_detour}" },
@@ -203,6 +239,8 @@ build_dns_block() {
     "independent_cache": true
   },
 EOF
+        ;;
+    esac
 }
 
 build_route_block() {
@@ -365,7 +403,13 @@ generate_config() {
     [ -z "$adblock" ] && adblock="0"
     
     dns_mode="$(nv singbox_dns_mode)"
-    [ -z "$dns_mode" ] && dns_mode="0"
+    # Mac dinh fallback = FakeIP ("1"), KHONG phai "0" (Direct) nhu truoc.
+    # Ly do: day la mode da duoc test on dinh, dropdown DNS Mode truoc gio
+    # khong co tac dung thuc te nen nhieu nguoi chua tung luu lua chon nao ->
+    # nvram rong. Neu fallback ve Direct, he thong dang chay FakeIP on dinh se
+    # tu dung mat fake-ip ngay sau khi ap ban nay. Chi Direct/DoH khi nguoi
+    # dung THUC SU bam chon va Luu tren webui.
+    [ -z "$dns_mode" ] && dns_mode="1"
 
     if [ "$mode" = "0" ]; then
         inbound_block='  "inbounds": [ { "type": "mixed", "tag": "mixed-in", "listen": "0.0.0.0", "listen_port": 7890 } ],'
@@ -402,7 +446,7 @@ generate_config() {
         echo "    \"cache_file\": { \"enabled\": true, \"path\": \"/tmp/sing-box/cache.db\" }"
         echo "  },"
         echo "$inbound_block"
-        build_dns_block "$final_tag"
+        build_dns_block "$final_tag" "$dns_mode"
         build_route_block "$bypass_vn" "$adblock" "$final_tag" "$mode"
         echo "  \"outbounds\": ["
         echo "$selector_block"
