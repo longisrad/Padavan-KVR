@@ -11,8 +11,7 @@ WORK_DIR="/tmp/sing-box/work"
 LOG_FILE="/tmp/singbox.log"
 LOG_TAG="sing-box"
 WATCHDOG_FILE="/tmp/script/_opt_script_check"
-RULESET_DIR="/tmp/sing-box/rule-set"
-SUB_CACHE="/tmp/sing-box/sub_raw.json"
+FORCE_FETCH_MARKER="/tmp/sing-box/.force_fetch"
 
 LAST_SUB_UPDATE_FILE="/etc/storage/singbox_last_sub_update"
 SUB_UPDATE_INTERVAL=259200
@@ -246,7 +245,7 @@ EOF
 }
 
 build_route_block() {
-    bypass_vn="$1"; adblock="$2"; final_tag="$3"; rt_mode="$4"
+    bypass_vn="$1"; adblock="$2"; final_tag="$3"; rt_mode="$4"; dns_mode="$5"
     rulesets=""
     rules=""
 
@@ -271,11 +270,32 @@ build_route_block() {
 '
     fi
 
+    resolve_rule=""
     if [ "$bypass_vn" = "1" ]; then
         rulesets="${rulesets}    { \"tag\": \"geoip-vn\", \"type\": \"remote\", \"format\": \"binary\", \"url\": \"https://testingcf.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-vn.srs\", \"download_detour\": \"direct\" },
 "
         rules="${rules}    { \"rule_set\": \"geoip-vn\", \"outbound\": \"direct\" },
 "
+        # geoip-vn la rule ip_cidr, can dia chi IP THAT de khop. Co 2 tinh
+        # huong khien metadata.destination CHUA phai IP thuc luc rule nay
+        # duoc danh gia, ca hai deu can "resolve" moi khop dung:
+        #   - dns_mode=1 (FakeIP, TProxy): destination la fake-ip 198.18.x.x
+        #     -> PHAI chi dinh ro server=dns-remote de "resolve" bo qua rule
+        #     DNS global (A/AAAA->fakeip), lay IP thuc tu 8.8.8.8.
+        #   - dns_mode=0/2 (Direct/DoH, ca Mixed va TProxy): du khong dung
+        #     fake-ip, nhung app ket noi vao mixed-in thuong gui dich den la
+        #     DOMAIN (khi dung "Remote DNS qua SOCKS5", rat pho bien de
+        #     tranh lo DNS cuc bo) chu chua phai IP -> van can "resolve",
+        #     nhung KHONG chi dinh server (khong co rule fakeip nao de tranh,
+        #     se tu roi vao "final" tuong ung: dns-direct/dns-doh, ra IP thuc
+        #     dung binh thuong).
+        if [ "$dns_mode" = "1" ]; then
+            resolve_rule='      { "action": "resolve", "server": "dns-remote" },
+'
+        else
+            resolve_rule='      { "action": "resolve" },
+'
+        fi
     fi
 
     if [ "$adblock" = "1" ]; then
@@ -293,7 +313,7 @@ ${rulesets%,
     ],
     "rules": [
 ${sniff_rule}      { "protocol": "dns", "action": "hijack-dns" },
-${rules}      { "ip_is_private": true, "outbound": "direct" }
+${resolve_rule}${rules}      { "ip_is_private": true, "outbound": "direct" }
     ],
     "final": "${final_tag}",
     "auto_detect_interface": true
@@ -322,6 +342,28 @@ fetch_all_groups() {
     if ! have_jq; then
         log "LỖI CRITICAL: không tìm thấy 'jq' tại /usr/bin/jq."
         return 1;
+    fi
+
+    # --- CACHE THEO HASH NOI DUNG SUB LIST ---
+    # Tranh tai lai TOAN BO subscription tu mang moi khi generate_config()
+    # duoc goi (vd: chi doi mem_limit, bat/tat adblock, watchdog tu restart
+    # sau crash...) trong khi danh sach sub KHONG thay doi gi. Chi fetch lai
+    # thuc su khi: (a) noi dung sub_list_json thay doi (nguoi dung sua/luu
+    # tren webui), hoac (b) co FORCE_FETCH_MARKER (update_sub cron/thu cong).
+    fetch_force=0
+    if [ -f "$FORCE_FETCH_MARKER" ]; then
+        fetch_force=1
+        rm -f "$FORCE_FETCH_MARKER"
+    fi
+    sub_hash="$(echo "$sub_list_json" | md5sum 2>/dev/null | cut -d' ' -f1)"
+    if [ "$fetch_force" != "1" ] && [ -s "$GROUP_DIR/all_proxies.jsonl" ] && [ -f "$GROUP_DIR/.sub_hash" ] \
+        && [ "$(cat "$GROUP_DIR/.sub_hash" 2>/dev/null)" = "$sub_hash" ] && [ -n "$sub_hash" ]; then
+        cached_total="$("$JQ_BIN" 'length' "$GROUP_DIR/group_tags.json" 2>/dev/null)"
+        case "$cached_total" in ''|*[!0-9]*) cached_total=0 ;; esac
+        if [ "$cached_total" -gt 0 ]; then
+            log "Danh sách Subscription không đổi -> dùng lại $cached_total nhóm đã tải trước (bỏ qua tải lại mạng)"
+            return 0
+        fi
     fi
 
     count="$(echo "$sub_list_json" | "$JQ_BIN" 'length' 2>/dev/null)"
@@ -403,6 +445,11 @@ fetch_all_groups() {
 
     total_groups="$("$JQ_BIN" 'length' "$GROUP_DIR/group_tags.json" 2>/dev/null)"
     case "$total_groups" in ''|*[!0-9]*) total_groups=0 ;; esac
+
+    if [ "$total_groups" -gt 0 ] && [ -n "$sub_hash" ]; then
+        echo "$sub_hash" > "$GROUP_DIR/.sub_hash"
+    fi
+
     [ "$total_groups" -gt 0 ]
 }
 
@@ -471,11 +518,11 @@ generate_config() {
         echo "  \"log\": { \"level\": \"info\", \"timestamp\": true },"
         echo "  \"experimental\": {"
         echo "    \"clash_api\": { \"external_controller\": \"0.0.0.0:9090\", \"external_ui\": \"${UI_DIR}\", \"secret\": \"\" },"
-        echo "    \"cache_file\": { \"enabled\": true, \"path\": \"/tmp/sing-box/cache.db\" }"
+        echo "    \"cache_file\": { \"enabled\": true, \"path\": \"/tmp/sing-box/cache.db\", \"store_fakeip\": true }"
         echo "  },"
         echo "$inbound_block"
         build_dns_block "$final_tag" "$dns_mode"
-        build_route_block "$bypass_vn" "$adblock" "$final_tag" "$mode"
+        build_route_block "$bypass_vn" "$adblock" "$final_tag" "$mode" "$dns_mode"
         echo "  \"outbounds\": ["
         echo "$selector_block"
         echo "$group_selectors_body"
@@ -633,6 +680,9 @@ update_sub() {
     esac
 
     log "===== Bắt đầu cập nhật nguồn Subscription ($([ "$force" = "force" ] && echo thủ công || echo tự động)) ====="
+
+    mkdir -p "$(dirname "$FORCE_FETCH_MARKER")" 2>/dev/null
+    touch "$FORCE_FETCH_MARKER"
 
     if is_running; then
         restart
