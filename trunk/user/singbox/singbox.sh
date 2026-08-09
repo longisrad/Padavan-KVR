@@ -249,8 +249,22 @@ build_route_block() {
     rulesets=""
     rules=""
 
-    sniff_rule=""
-    if [ "$rt_mode" != "0" ]; then
+    # Sniff SNI/HTTP-Host de biet domain cho rule bypass_vn/adblock (dua vao
+    # geosite/geoip theo domain). Can cho CA 2 mode, khong chi TProxy:
+    #   - Mixed (mixed-in): hau het app/browser tu resolve DNS bang resolver
+    #     he thong roi moi noi proxy bang IP that (khong gui domain qua SOCKS/
+    #     HTTP CONNECT nhu nhieu nguoi tuong, tru khi app tu bat "remote DNS").
+    #     Neu khong sniff, sing-box chi thay IP, khong co domain nao de khop
+    #     rule geosite-ads/geoip-vn -> adblock/bypass_vn im lang vo hieu.
+    #   - TProxy (tproxy-in/dns-in): tuong tu, can sniff de bu lai truong hop
+    #     dns_mode=Direct/DoH (khong co fake-ip de biet truoc domain).
+    # Sniff SNI van hoat dong duoc du chi co IP, vi no doc thang byte TLS
+    # ClientHello cua chinh ket noi dang chay qua, khong phu thuoc viec
+    # sing-box nhan duoc domain hay IP luc dau.
+    if [ "$rt_mode" = "0" ]; then
+        sniff_rule='      { "inbound": "mixed-in", "action": "sniff" },
+'
+    else
         sniff_rule='      { "inbound": "tproxy-in", "action": "sniff" },
       { "inbound": "dns-in", "action": "sniff" },
 '
