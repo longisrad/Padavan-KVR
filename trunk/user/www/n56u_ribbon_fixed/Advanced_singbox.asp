@@ -200,6 +200,33 @@ function openDashboard(){
 	window.open("http://" + ip + ":9090/ui/#/setup?host=" + ip + "&port=9090", "_blank");
 }
 
+/* Tu dong BAT redirect DNS khi chuyen sang TProxy Mode - chi chay khi
+   user CHU DONG doi dropdown Mode (onchange), KHONG goi trong
+   updateUiVisibility() vi ham do con chay ca luc page load/reload, neu
+   ep bat o do se ghi de len lua chon TAT redirect nguoi dung da luu
+   truoc do (VD dang ket hop AdGuard Home can TAT redirect).
+   Khong dung .trigger('click') vi itoggle.js (init_itoggle) khong bind
+   click truc tiep vao checkbox _fake - no bind vao div _on_of qua plugin
+   .iToggle(), roi tu set checkbox/radio trong callback onClickOn/
+   onClickOff. Nen o day set thang y het logic onClickOn cua itoggle.js:
+   checkbox _fake, 2 radio _0/_1, va background-position cua label de
+   khop UI voi trang thai moi. */
+function onModeChange(){
+	var modeSelect = $j('#singbox_mode_select');
+	if (modeSelect.length && modeSelect.val() === "1") {
+		var objF = $j('#singbox_dns_redirect_fake');
+		if (objF.length && !objF.is(':checked')) {
+			var objO = $j('#singbox_dns_redirect_0');
+			var obj1 = $j('#singbox_dns_redirect_1');
+			objF.attr("checked", "checked").attr("value", 1);
+			obj1.attr("checked", "checked");
+			objO.removeAttr("checked");
+			$j('#singbox_dns_redirect_on_of label.itoggle').css("background-position", '0% -27px');
+		}
+	}
+	updateUiVisibility();
+}
+
 /* LOGIC ĐIỀU KHIỂN GIAO DIỆN HOÀN CHỈNH (CHỐNG LỖI CACHE KHU BẤM APPLY) */
 function updateUiVisibility(){
 	var modeSelect = $j('#singbox_mode_select');
@@ -242,6 +269,8 @@ function updateUiVisibility(){
 		}
 		// Ép ẩn dòng Redirect DNS 53
 		if (redirectRow) redirectRow.style.display = 'none';
+		var hintMixed = $j('#dns_redirect_hint');
+		if (hintMixed.length) hintMixed.html('');
 	} else if (mode === "1") {
 		// TProxy Mode: Mở lại option FakeIP
 		optFakeIp.prop('disabled', false).show();
@@ -249,14 +278,11 @@ function updateUiVisibility(){
 		// Hiện dòng Redirect DNS 53
 		if (redirectRow) redirectRow.style.display = '';
 
-		// Cập nhật chú thích động
+		// Cập nhật chú thích - chỉ phụ thuộc vào Mode (TProxy), không phân
+		// nhánh theo DNS Mode nữa
 		var hint = $j('#dns_redirect_hint');
 		if (hint.length) {
-			if (dnsSelect.val() === "1") {
-				hint.html('<span style="color:#f0ad4e; margin-left:10px;">(Khuyên BẬT khi chạy độc lập; TẮT nếu kết hợp với AdGuard Home làm DNS chính).</span>');
-			} else {
-				hint.html('<span style="color:#888; margin-left:10px;">(Bẻ toàn bộ truy vấn DNS cổng 53 LAN về cổng 5353 cho Sing-box).</span>');
-			}
+			hint.html('<span style="color:#f0ad4e; margin-left:10px;">(Khuyên BẬT khi chạy độc lập; TẮT nếu kết hợp với các dịch vụ DNS khác làm DNS chính).</span>');
 		}
 	}
 }
@@ -333,7 +359,7 @@ function updateUiVisibility(){
 	<tr>
 		<th>Chế độ hoạt động (Running Mode)</th>
 		<td>
-			<select name="singbox_mode" id="singbox_mode_select" class="input" onchange="updateUiVisibility();">
+			<select name="singbox_mode" id="singbox_mode_select" class="input" onchange="onModeChange();">
 				<option value="0" <% nvram_match_x("","singbox_mode","0","selected"); %>>Mode 1: Mixed Proxy (Port 7890 - Chỉnh thủ công từng máy)</option>
 				<option value="1" <% nvram_match_x("","singbox_mode","1","selected"); %>>Mode 2: TProxy Mode (Toàn mạng LAN)</option>
 				<option value="2" <% nvram_match_x("","singbox_mode","2","selected"); %>>Mode 3: Custom JSON (Dùng cấu hình bên dưới)</option>
