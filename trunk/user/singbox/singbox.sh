@@ -25,7 +25,6 @@ CRON_FILE="/etc/storage/cron/crontabs/$(nvram get http_username 2>/dev/null)"
 # Cấu hình Repo và tên Asset
 REPO="shtorm-7/sing-box-extended"
 GH_API="https://api.github.com/repos/${REPO}/releases/latest"
-ASSET_NAME="linux-mipsle-softfloat-compressed"
 
 # Sử dụng trực tiếp jq đã tích hợp trong Firmware
 JQ_BIN="/usr/bin/jq"
@@ -49,12 +48,14 @@ rotate_log() {
     fi
 }
 
+ASSET_NAME="linux-mipsle-softfloat-compressed"
+
 download_binary() {
     log "Đang tải sing-box từ ${REPO} về RAM (/tmp/sing-box)..."
     mkdir -p "$BIN_DIR"
 
     dl_url="$(curl -sk --connect-timeout 4 "$GH_API" 2>/dev/null \
-        | grep -E "browser_download_url.*(${ASSET_NAME}|\.tar\.gz|\.zip)" \
+        | grep -E "browser_download_url.*${ASSET_NAME}\.tar\.gz" \
         | cut -d'"' -f4 | head -n1)"
 
     if [ -z "$dl_url" ]; then
