@@ -1,21 +1,24 @@
-# 修改40行的TNAME: NEWIFI3 中的NEWIFI3为你需要编译的型号，注意名称要与trunk/configs/templates/目录下的名字相同
+# Cấu hình Compile Firmware NEWIFI3
 name: 新三NEWIFI3
 
 on: 
   workflow_dispatch:
 
-# 设置仓库的读写权限
+# Thiết lập quyền đọc/ghi
 permissions:
   contents: write
+
 env:
   TZ: Asia/Shanghai
+
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
     - name: Checkout
-      uses: actions/checkout@master
+      uses: actions/checkout@v4
+
     - name: Initialization environment
       env:
         DEBIAN_FRONTEND: noninteractive
@@ -24,11 +27,7 @@ jobs:
         sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot \
         cpio git python3-docutils gettext automake autopoint texinfo build-essential help2man \
         pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget
-    - name: Install UPX
-      uses: crazy-max/ghaction-upx@v3
-      with:
-        version: v4.2.4
-        install-only: true
+
     - name: Clone source code
       env:
         KERNEL: 3.4
@@ -38,55 +37,12 @@ jobs:
         sh dl_toolchain.sh
         mkdir -p /opt/images/
         
-        ##### 修改内存空间和 storage空间18m, tmp 256m cho RAM 512MB
+        ##### Tối ưu không gian Storage 18M và RAM tmp 256M cho Newifi 3 (RAM 512MB)
         sed -i 's/0x200000/0x1200000/g' /opt/rt-n56u/trunk/configs/boards/NEWIFI3/kernel-3.4.x.config
         sed -i 's/size_etc="6M"/size_etc="18M"/g' /opt/rt-n56u/trunk/user/scripts/dev_init.sh
         sed -i 's/size_tmp="24M"/size_tmp="256M"/g' /opt/rt-n56u/trunk/user/scripts/dev_init.sh
         sed -i 's/mtd_part_size=65536/mtd_part_size=18874368/g' /opt/rt-n56u/trunk/user/scripts/mtd_storage.sh
-    - name: Setup Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.24'
-    - name: Build sing-box extended & Auto-config SH script
-      run: |
-        SB_TAG=$(curl -s https://api.github.com/repos/shtorm-7/sing-box-extended/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
-        echo "Latest sing-box-extended version: $SB_TAG"
-        [ -z "$SB_TAG" ] && SB_TAG="v1.13.12-extended-2.4.1"
-        
-        git clone --depth=1 --branch "$SB_TAG" https://github.com/shtorm-7/sing-box-extended.git /tmp/sing-box-src 2>/dev/null || \
-        git clone --depth=1 https://github.com/shtorm-7/sing-box-extended.git /tmp/sing-box-src
-        
-        cd /tmp/sing-box-src
-        export GOOS=linux
-        export GOARCH=mipsle
-        export GOMIPS=softfloat
-        export CGO_ENABLED=0
-        
-        # ĐÃ BỎ with_naive_outbound ĐỂ KHÔNG BỊ LỖI CRONET TRÊN MIPSLE
-        mkdir -p /opt/images
-        go build -trimpath \
-          -tags "with_quic,with_clash_api,with_gvisor,with_dhcp,with_v2ray_api,with_utls,with_shadowsocksr" \
-          -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=${SB_TAG}" \
-          -o /opt/images/sing-box-mipsle.bin \
-          ./cmd/sing-box
-        
-        upx --lzma --best /opt/images/sing-box-mipsle.bin
-        
-        SH_FILE=$(find /opt/rt-n56u/trunk/user/ -name "*singbox*.sh" -o -name "singbox.sh" | head -n 1)
-        
-        if [ -f "$SH_FILE" ]; then
-          echo "Found script file at: $SH_FILE"
-          
-          sed -i "s|REPO=\".*\"|REPO=\"${GITHUB_REPOSITORY}\"|g" "$SH_FILE"
-          sed -i "s|ASSET_NAME=\".*\"|ASSET_NAME=\"sing-box-mipsle.bin\"|g" "$SH_FILE"
-          
-          echo "=== KET QUA AUTO-CONFIG TRONG FILE SH ==="
-          grep -E "REPO=|ASSET_NAME=" "$SH_FILE"
-        else
-          echo "WARNING: Khong tim thay file singbox.sh trong thu muc /opt/rt-n56u/trunk/user/"
-        fi
-        
-        echo "SB_TAG=${SB_TAG}" >> $GITHUB_ENV
+
     - name: Build Firmware
       env:
         TNAME: NEWIFI3
@@ -102,6 +58,7 @@ jobs:
         
         ######################################################################
         ### Xóa cấu hình mặc định cũ ###
+        ######################################################################
         sed -i '/CONFIG_FIRMWARE_ENABLE_IPV6/d' .config
         sed -i '/CONFIG_FIRMWARE_ENABLE_USB/d' .config
         sed -i '/CONFIG_FIRMWARE_ENABLE_UFSD/d' .config
@@ -318,8 +275,9 @@ jobs:
         cp -f .config /opt/images/${TNAME}.config
         echo "build_time=$(date '+%Y年%m月%d日%H:%M:%S' | jq -sRr @uri)" >> $GITHUB_ENV
         echo "tag=$(date '+%Y-%m-%d')" >> $GITHUB_ENV
-    - name : Upload packages
-      uses: actions/upload-artifact@master
+
+    - name: Upload packages
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: NEWIFI3
