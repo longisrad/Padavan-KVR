@@ -25,7 +25,7 @@ CRON_FILE="/etc/storage/cron/crontabs/$(nvram get http_username 2>/dev/null)"
 # Cấu hình Repo và tên Asset
 REPO="shtorm-7/sing-box-extended"
 GH_API="https://api.github.com/repos/${REPO}/releases/latest"
-ASSET_NAME="linux-mipsle-compressed"
+ASSET_NAME="linux-mipsle-softfloat-compressed"
 
 # Sử dụng trực tiếp jq đã tích hợp trong Firmware
 JQ_BIN="/usr/bin/jq"
