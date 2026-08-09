@@ -29,6 +29,9 @@ body.body_iframe{
 .wrapper {
     width: 960px;
     margin: 0 auto;
+    zoom: 1.35;
+    -moz-transform: scale(1.35);
+    -moz-transform-origin: top center;
 }
 
 #logo {  
@@ -635,4 +638,37 @@ textarea[readonly] {
 
 .input-append input {
     border-radius: 3px 0 0 3px;
+}
+/* ========================================================
+   CẤU HÌNH TỰ ĐỘNG THÍCH ỨNG CHO CẢ MÁY TÍNH VÀ ĐIỆN THOẠI
+   ======================================================== */
+
+/* 1. DÀNH CHO MÁY TÍNH (Màn hình ngang) */
+@media screen and (min-width: 992px) {
+    .wrapper {
+        width: 960px;
+        margin: 0 auto;
+        zoom: 1.2; /* Phóng to 120% giúp PC nhìn rõ nét */
+    }
+    iframe, #contentWrapper {
+        min-height: 800px !important; /* Độ dài chuẩn vừa vặn màn hình máy tính */
+    }
+    .side_nav {
+        min-height: 750px;
+    }
+}
+
+/* 2. DÀNH CHO ĐIỆN THOẠI (Màn hình dọc) */
+@media screen and (max-width: 991px) {
+    .wrapper {
+        width: 960px;
+        margin: 0 auto;
+        zoom: 1.35; /* Phóng to 135% dễ thao tác cảm ứng */
+    }
+    iframe, #contentWrapper {
+        min-height: 1400px !important; /* Kéo dài lấp khoảng trống tím phía dưới */
+    }
+    .side_nav {
+        min-height: 1350px;
+    }
 }
