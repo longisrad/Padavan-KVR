@@ -637,35 +637,3 @@ textarea[readonly] {
     border-radius: 3px 0 0 3px;
 }
 
-/* ========================================================
-   CẤU HÌNH ĐÃ SỬA LỖI TRÀN MÀN HÌNH VÀ LỆCH KHUNG
-   ======================================================== */
-
-/* 1. DÀNH CHO MÁY TÍNH (Màn hình ngang) */
-@media screen and (min-width: 992px) {
-    .wrapper {
-        zoom: 1.15; /* Phóng nhẹ 115% trên PC cho dễ nhìn */
-        -moz-transform: scale(1.15);
-        -moz-transform-origin: top center;
-    }
-    iframe, #contentWrapper {
-        min-height: 800px !important;
-    }
-    .side_nav {
-        min-height: 750px;
-    }
-}
-
-/* 2. DÀNH CHO ĐIỆN THOẠI (Màn hình dọc) */
-@media screen and (max-width: 991px) {
-    .wrapper {
-        zoom: 1.0 !important; /* Bắt buộc giữ 100% để điện thoại tự co dãn 960px vừa khít lề */
-        -moz-transform: scale(1.0) !important;
-    }
-    iframe, #contentWrapper {
-        min-height: 850px !important; /* Chiều cao vừa đủ đẹp, không bị đứt khung đen */
-    }
-    .side_nav {
-        min-height: 800px;
-    }
-}
