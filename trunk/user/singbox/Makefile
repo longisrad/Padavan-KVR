@@ -12,3 +12,4 @@ romfs:
 	$(ROMFSINST) $(THISDIR)/converter.lua /etc_ro/singbox/converter.lua
 	$(ROMFSINST) -p +x $(THISDIR)/gen_links.sh /etc_ro/singbox/gen_links.sh
 	$(ROMFSINST) -p +x $(THISDIR)/sub_mgr.sh /etc_ro/singbox/sub_mgr.sh
+    $(ROMFSINST) -p +x $(THISDIR)/singbox_route.sh /etc_ro/singbox/singbox_route.sh
