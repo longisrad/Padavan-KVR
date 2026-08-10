@@ -1265,6 +1265,18 @@
             {"singbox_dns_redirect", "", NULL, EVM_RESTART_SINGBOX},
 			{"singbox_mem_limit", "", NULL, EVM_RESTART_SINGBOX},
 			{"singbox_auto_update", "", NULL, EVM_RESTART_SINGBOX},
+			{"singbox_ts_enable", "", NULL, EVM_RESTART_SINGBOX},
+			{"singbox_ts_authkey", "128", NULL, EVM_RESTART_SINGBOX},
+			{"singbox_ts_accept_routes", "", NULL, EVM_RESTART_SINGBOX},
+			{"singbox_ts_hostname", "63", NULL, EVM_RESTART_SINGBOX},
+			{"singbox_ts_control_url", "200", NULL, EVM_RESTART_SINGBOX},
+			{"singbox_ts_ephemeral", "", NULL, EVM_RESTART_SINGBOX},
+			{"singbox_ts_exit_node", "128", NULL, EVM_RESTART_SINGBOX},
+			{"singbox_ts_exit_node_allow_lan", "", NULL, EVM_RESTART_SINGBOX},
+			{"singbox_ts_advertise_routes", "256", NULL, EVM_RESTART_SINGBOX},
+			{"singbox_ts_advertise_exit_node", "", NULL, EVM_RESTART_SINGBOX},
+			{"singbox_ts_advertise_tags", "256", NULL, EVM_RESTART_SINGBOX},
+			{"singbox_ts_ssh_server", "", NULL, EVM_RESTART_SINGBOX},
 			{"scripts.singbox.conf", "File", NULL, EVM_RESTART_SINGBOX},
 			{0,0,0,0}
 	};

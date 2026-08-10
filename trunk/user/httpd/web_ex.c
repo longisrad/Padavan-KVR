@@ -4038,6 +4038,42 @@ apply_cgi(const char *url, webs_t wp)
 #endif
 		return 0;
 	}
+	else if (!strcmp(value, " GetSingboxTsUrl "))
+	{
+		// Doc URL dang nhap Tailscale (endpoint native trong sing-box) tu
+		// log, khi khong dung auth_key (interactive login). Theo tai lieu
+		// sing-box: "Auth key is not required. By default, sing-box will
+		// log the login URL." - URL nay co dang co dinh
+		// https://login.tailscale.com/a/xxxxxxxxxxxx, chi lay dong CUOI
+		// CUNG xuat hien trong log (URL cu co the da het han sau khi
+		// sing-box tu restart/token moi duoc cap).
+#if defined(APP_SINGBOX)
+		{
+			char result_line[512];
+			FILE *fstream;
+
+			result_line[0] = '\0';
+			fstream = popen(
+				"grep -o 'https://login\\.tailscale\\.com/a/[A-Za-z0-9]*' /tmp/singbox.log 2>/dev/null | tail -n1",
+				"r");
+			if (fstream) {
+				if (fgets(result_line, sizeof(result_line), fstream) == NULL)
+					result_line[0] = '\0';
+				pclose(fstream);
+			}
+			// Xoa ky tu newline cuoi dong (fgets giu lai \n)
+			{
+				size_t l = strlen(result_line);
+				if (l > 0 && result_line[l - 1] == '\n') result_line[l - 1] = '\0';
+			}
+
+			websWrite(wp, "{\"url\":\"%s\"}", result_line);
+		}
+#else
+		websWrite(wp, "{\"url\":\"\"}");
+#endif
+		return 0;
+	}
 /* ================= BẮT ĐẦU AJAX CHO SUB_MGR.SH ================= */
 	else if (!strcmp(value, " AddSingboxSub "))
 	{
