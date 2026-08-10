@@ -24,6 +24,12 @@ $j(document).ready(function() {
 	init_itoggle('singbox_adblock');
 	init_itoggle('singbox_dns_redirect');
 	init_itoggle('singbox_auto_update');
+	init_itoggle('singbox_ts_enable');
+	init_itoggle('singbox_ts_accept_routes');
+	init_itoggle('singbox_ts_ephemeral');
+	init_itoggle('singbox_ts_exit_node_allow_lan');
+	init_itoggle('singbox_ts_advertise_exit_node');
+	init_itoggle('singbox_ts_ssh_server');
 	updateUiVisibility();
 });
 
@@ -150,6 +156,29 @@ function checkSubUrl(){
 	});
 }
 
+function fetchTsLoginUrl(){
+	var status = $j('#ts_login_url_status');
+	var box = $j('#ts_login_url_box');
+	var link = $j('#ts_login_url_link');
+	status.html('<span style="color:#f0ad4e;">Đang lấy link từ log (chờ sing-box khởi động xong nếu vừa Apply)...</span>');
+	box.hide();
+	$j.post('/apply.cgi', {
+		'action_mode': ' GetSingboxTsUrl '
+	}).done(function(data){
+		var res;
+		try { res = (typeof data === 'string') ? JSON.parse(data) : data; } catch(e) { res = null; }
+		if(res && res.url){
+			status.html('<span style="color:#5cb85c;">✅ Đã tìm thấy link - bấm vào để đăng nhập (mở tab mới):</span>');
+			link.attr('href', res.url).text(res.url);
+			box.show();
+		} else {
+			status.html('<span style="color:#d9534f;">Chưa thấy link trong log. Có thể node đã đăng nhập trước đó rồi, hoặc cần Apply + đợi vài giây rồi bấm lại.</span>');
+		}
+	}).fail(function(){
+		status.html('<span style="color:#d9534f;">Lỗi khi gọi Router.</span>');
+	});
+}
+
 function forceUpdateSub(){
 	showLoading();
 	document.form.action_mode.value = " Apply ";
@@ -241,6 +270,7 @@ function updateUiVisibility(){
 	var adblockRow = $j('#singbox_adblock_row')[0];
 	var redirectRow = $j('#singbox_dns_redirect_row')[0];
 	var configRow = $j('#singbox_config_row')[0];
+	var tsRow = $j('#singbox_ts_table')[0];
 
 	// 1. Chế độ Custom JSON (Mode 2)
 	if (mode === "2") {
@@ -248,10 +278,12 @@ function updateUiVisibility(){
 		if (bypassRow) bypassRow.style.display = 'none';
 		if (adblockRow) adblockRow.style.display = 'none';
 		if (redirectRow) redirectRow.style.display = 'none';
+		if (tsRow) tsRow.style.display = 'none';
 		if (configRow) configRow.style.display = '';
 		return;
 	} else {
 		if (configRow) configRow.style.display = 'none';
+		if (tsRow) tsRow.style.display = '';
 	}
 
 	// 2. Chế độ Mixed Proxy (Mode 0) và TProxy Mode (Mode 1)
@@ -490,6 +522,160 @@ function updateUiVisibility(){
 				<input type="radio" value="0" name="singbox_dns_redirect" id="singbox_dns_redirect_0" class="input" <% nvram_match_x("", "singbox_dns_redirect", "0", "checked"); %> /><#checkbox_No#>
 			</div>
 			<span id="dns_redirect_hint" style="display:inline-block; vertical-align:middle;"></span>
+		</td>
+	</tr>
+	</table>
+
+	<!-- BẢNG 3.5: TAILSCALE NATIVE ENDPOINT (chạy trong chính tiến trình sing-box) -->
+	<table width="100%" cellpadding="4" cellspacing="0" class="table" id="singbox_ts_table">
+	<tr><th colspan="2" style="background-color:#756c78;">Tailscale (Native Endpoint - chạy trong sing-box)</th></tr>
+	<tr>
+		<td colspan="2">
+			<div class="alert alert-info" style="margin:6px 0;">
+				Tailscale chạy trực tiếp bên trong tiến trình sing-box (yêu cầu sing-box &ge; 1.12.0), <b>không</b> tạo interface <code>tailscale0</code> riêng ở tầng kernel, tránh xung đột routing/interface với TPROXY.
+				<b>Không bật đồng thời</b> với ứng dụng Tailscale độc lập (mục Tailscale riêng ở menu VPN) - chỉ nên dùng MỘT trong hai.
+			</div>
+		</td>
+	</tr>
+	<tr>
+		<th width="30%">Bật Tailscale (Native)</th>
+		<td>
+			<div class="main_itoggle">
+				<div id="singbox_ts_enable_on_of">
+					<input type="checkbox" id="singbox_ts_enable_fake" <% nvram_match_x("", "singbox_ts_enable", "1", "value=1 checked"); %><% nvram_match_x("", "singbox_ts_enable", "0", "value=0"); %> />
+				</div>
+			</div>
+			<div style="position: absolute; margin-left: -10000px;">
+				<input type="radio" value="1" name="singbox_ts_enable" id="singbox_ts_enable_1" class="input" <% nvram_match_x("", "singbox_ts_enable", "1", "checked"); %> /><#checkbox_Yes#>
+				<input type="radio" value="0" name="singbox_ts_enable" id="singbox_ts_enable_0" class="input" <% nvram_match_x("", "singbox_ts_enable", "0", "checked"); %> /><#checkbox_No#>
+			</div>
+		</td>
+	</tr>
+	<tr>
+		<th>Auth Key <span style="color:#888; font-weight:normal;">(tùy chọn)</span></th>
+		<td>
+			<input type="password" name="singbox_ts_authkey" id="singbox_ts_authkey" class="input" style="width:60%;" maxlength="128" autocomplete="off" value="<% nvram_get_x("", "singbox_ts_authkey"); %>" placeholder="Để trống nếu muốn đăng nhập qua Link (khuyên dùng)" />
+			<span style="color:#888; margin-left:8px;">
+				Chỉ cần điền nếu muốn tự động hoá (tạo tại
+				<a href="https://login.tailscale.com/admin/settings/keys" target="_blank">login.tailscale.com/admin/settings/keys</a>).
+			</span>
+			<div style="margin-top:8px;">
+				<input class="btn btn-info" type="button" value="🔗 Lấy Link Đăng Nhập" onclick="fetchTsLoginUrl();" />
+				<span id="ts_login_url_status" style="margin-left:8px;"></span>
+			</div>
+			<div id="ts_login_url_box" style="display:none; margin-top:8px;">
+				<a id="ts_login_url_link" href="#" target="_blank" style="font-family:monospace;"></a>
+			</div>
+		</td>
+	</tr>
+	<tr>
+		<th>Nhận Route quảng bá (Accept Routes)</th>
+		<td>
+			<div class="main_itoggle">
+				<div id="singbox_ts_accept_routes_on_of">
+					<input type="checkbox" id="singbox_ts_accept_routes_fake" <% nvram_match_x("", "singbox_ts_accept_routes", "1", "value=1 checked"); %><% nvram_match_x("", "singbox_ts_accept_routes", "0", "value=0"); %> />
+				</div>
+			</div>
+			<div style="position: absolute; margin-left: -10000px;">
+				<input type="radio" value="1" name="singbox_ts_accept_routes" id="singbox_ts_accept_routes_1" class="input" <% nvram_match_x("", "singbox_ts_accept_routes", "1", "checked"); %> /><#checkbox_Yes#>
+				<input type="radio" value="0" name="singbox_ts_accept_routes" id="singbox_ts_accept_routes_0" class="input" <% nvram_match_x("", "singbox_ts_accept_routes", "0", "checked"); %> /><#checkbox_No#>
+			</div>
+			<span style="color:#888; margin-left:10px;">Bật nếu muốn nhận subnet route được quảng bá từ các node khác trong tailnet.</span>
+		</td>
+	</tr>
+	<tr>
+		<th>Hostname <span style="color:#888; font-weight:normal;">(tùy chọn)</span></th>
+		<td>
+			<input type="text" name="singbox_ts_hostname" class="input" style="width:40%;" maxlength="63" value="<% nvram_get_x("", "singbox_ts_hostname"); %>" placeholder="newifi3-router" />
+			<span style="color:#888; margin-left:8px;">Tên hiển thị của node này trên tailnet. Để trống = dùng hostname hệ thống.</span>
+		</td>
+	</tr>
+	<tr>
+		<th>Control URL <span style="color:#888; font-weight:normal;">(tùy chọn)</span></th>
+		<td>
+			<input type="text" name="singbox_ts_control_url" class="input" style="width:60%;" maxlength="200" value="<% nvram_get_x("", "singbox_ts_control_url"); %>" placeholder="https://controlplane.tailscale.com (để trống nếu không tự host Headscale)" />
+			<span style="color:#888; margin-left:8px;">Chỉ điền nếu bạn tự host coordination server riêng (VD: Headscale).</span>
+		</td>
+	</tr>
+	<tr>
+		<th>Ephemeral Node</th>
+		<td>
+			<div class="main_itoggle">
+				<div id="singbox_ts_ephemeral_on_of">
+					<input type="checkbox" id="singbox_ts_ephemeral_fake" <% nvram_match_x("", "singbox_ts_ephemeral", "1", "value=1 checked"); %><% nvram_match_x("", "singbox_ts_ephemeral", "0", "value=0"); %> />
+				</div>
+			</div>
+			<div style="position: absolute; margin-left: -10000px;">
+				<input type="radio" value="1" name="singbox_ts_ephemeral" id="singbox_ts_ephemeral_1" class="input" <% nvram_match_x("", "singbox_ts_ephemeral", "1", "checked"); %> /><#checkbox_Yes#>
+				<input type="radio" value="0" name="singbox_ts_ephemeral" id="singbox_ts_ephemeral_0" class="input" <% nvram_match_x("", "singbox_ts_ephemeral", "0", "checked"); %> /><#checkbox_No#>
+			</div>
+			<span style="color:#888; margin-left:10px;">Node tự động bị xoá khỏi tailnet khi offline (phù hợp khi test, không nên bật cho router chạy lâu dài).</span>
+		</td>
+	</tr>
+	<tr>
+		<th>Exit Node <span style="color:#888; font-weight:normal;">(tùy chọn)</span></th>
+		<td>
+			<input type="text" name="singbox_ts_exit_node" class="input" style="width:40%;" maxlength="128" value="<% nvram_get_x("", "singbox_ts_exit_node"); %>" placeholder="tên-node hoặc IP 100.x.x.x" />
+			<span style="color:#888; margin-left:8px;">Route toàn bộ traffic của router này qua 1 node khác trong tailnet (node đó phải tự bật "Advertise as Exit Node").</span>
+		</td>
+	</tr>
+	<tr>
+		<th>Exit Node - Cho phép truy cập LAN</th>
+		<td>
+			<div class="main_itoggle">
+				<div id="singbox_ts_exit_node_allow_lan_on_of">
+					<input type="checkbox" id="singbox_ts_exit_node_allow_lan_fake" <% nvram_match_x("", "singbox_ts_exit_node_allow_lan", "1", "value=1 checked"); %><% nvram_match_x("", "singbox_ts_exit_node_allow_lan", "0", "value=0"); %> />
+				</div>
+			</div>
+			<div style="position: absolute; margin-left: -10000px;">
+				<input type="radio" value="1" name="singbox_ts_exit_node_allow_lan" id="singbox_ts_exit_node_allow_lan_1" class="input" <% nvram_match_x("", "singbox_ts_exit_node_allow_lan", "1", "checked"); %> /><#checkbox_Yes#>
+				<input type="radio" value="0" name="singbox_ts_exit_node_allow_lan" id="singbox_ts_exit_node_allow_lan_0" class="input" <% nvram_match_x("", "singbox_ts_exit_node_allow_lan", "0", "checked"); %> /><#checkbox_No#>
+			</div>
+			<span style="color:#888; margin-left:10px;">Chỉ có tác dụng khi đã điền Exit Node phía trên. Lưu ý: nếu Exit Node đó chưa quảng bá route LAN tương ứng, mạng LAN cục bộ vẫn không truy cập được dù bật tùy chọn này.</span>
+		</td>
+	</tr>
+	<tr>
+		<th>Advertise Routes <span style="color:#888; font-weight:normal;">(tùy chọn)</span></th>
+		<td>
+			<input type="text" name="singbox_ts_advertise_routes" class="input" style="width:60%;" maxlength="256" value="<% nvram_get_x("", "singbox_ts_advertise_routes"); %>" placeholder="192.168.2.0/24, 192.168.3.0/24" />
+			<span style="color:#888; margin-left:8px;">Quảng bá subnet LAN của router này cho các node khác trong tailnet dùng (Subnet Router). Nhiều subnet cách nhau bằng dấu phẩy. Cần vào Tailscale Admin Console duyệt (approve) route sau khi Apply.</span>
+		</td>
+	</tr>
+	<tr>
+		<th>Advertise as Exit Node</th>
+		<td>
+			<div class="main_itoggle">
+				<div id="singbox_ts_advertise_exit_node_on_of">
+					<input type="checkbox" id="singbox_ts_advertise_exit_node_fake" <% nvram_match_x("", "singbox_ts_advertise_exit_node", "1", "value=1 checked"); %><% nvram_match_x("", "singbox_ts_advertise_exit_node", "0", "value=0"); %> />
+				</div>
+			</div>
+			<div style="position: absolute; margin-left: -10000px;">
+				<input type="radio" value="1" name="singbox_ts_advertise_exit_node" id="singbox_ts_advertise_exit_node_1" class="input" <% nvram_match_x("", "singbox_ts_advertise_exit_node", "1", "checked"); %> /><#checkbox_Yes#>
+				<input type="radio" value="0" name="singbox_ts_advertise_exit_node" id="singbox_ts_advertise_exit_node_0" class="input" <% nvram_match_x("", "singbox_ts_advertise_exit_node", "0", "checked"); %> /><#checkbox_No#>
+			</div>
+			<span style="color:#888; margin-left:10px;">Cho phép các node khác trong tailnet chọn router này làm Exit Node (route toàn bộ traffic của họ qua đây). Cần duyệt (approve) trong Tailscale Admin Console sau khi Apply.</span>
+		</td>
+	</tr>
+	<tr>
+		<th>Advertise Tags <span style="color:#888; font-weight:normal;">(tùy chọn)</span></th>
+		<td>
+			<input type="text" name="singbox_ts_advertise_tags" class="input" style="width:50%;" maxlength="256" value="<% nvram_get_x("", "singbox_ts_advertise_tags"); %>" placeholder="tag:router, tag:server" />
+			<span style="color:#888; margin-left:8px;">Gắn tag ACL cho node này (phải được định nghĩa trước trong ACL policy trên Tailscale Admin Console). Nhiều tag cách nhau bằng dấu phẩy.</span>
+		</td>
+	</tr>
+	<tr>
+		<th>Tailscale SSH Server</th>
+		<td>
+			<div class="main_itoggle">
+				<div id="singbox_ts_ssh_server_on_of">
+					<input type="checkbox" id="singbox_ts_ssh_server_fake" <% nvram_match_x("", "singbox_ts_ssh_server", "1", "value=1 checked"); %><% nvram_match_x("", "singbox_ts_ssh_server", "0", "value=0"); %> />
+				</div>
+			</div>
+			<div style="position: absolute; margin-left: -10000px;">
+				<input type="radio" value="1" name="singbox_ts_ssh_server" id="singbox_ts_ssh_server_1" class="input" <% nvram_match_x("", "singbox_ts_ssh_server", "1", "checked"); %> /><#checkbox_Yes#>
+				<input type="radio" value="0" name="singbox_ts_ssh_server" id="singbox_ts_ssh_server_0" class="input" <% nvram_match_x("", "singbox_ts_ssh_server", "0", "checked"); %> /><#checkbox_No#>
+			</div>
+			<span style="color:#888; margin-left:10px;">Cho phép SSH vào router qua Tailscale (kiểm soát quyền qua SSH ACL trên Admin Console), độc lập với SSH thường của Padavan.</span>
 		</td>
 	</tr>
 	</table>
