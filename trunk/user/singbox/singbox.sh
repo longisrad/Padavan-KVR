@@ -502,6 +502,19 @@ build_endpoints_block() {
     ts_adv_exit="$(nv singbox_ts_advertise_exit_node)";       [ "$ts_adv_exit" = "1" ] && ts_advexit=true || ts_advexit=false
     ts_ssh="$(nv singbox_ts_ssh_server)";                     [ "$ts_ssh" = "1" ] && ts_sshv=true || ts_sshv=false
 
+    # ssh_server la field CHI co tu sing-box 1.14.0 - gui field nay cho
+    # binary cu hon se bi FATAL "unknown field ssh_server" ngay khi start,
+    # bat ke gia tri true/false (strict JSON schema, khong quan tam value).
+    # Phai detect version binary thuc te dang chay va chi dinh kem field
+    # nay khi duoc ho tro, tranh crash tren binary build cu.
+    sb_ver="$("$BIN_PATH" version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
+    if [ -n "$sb_ver" ]; then
+        highest="$(printf '%s\n%s\n' "1.14.0" "$sb_ver" | sort -V | tail -n1)"
+        [ "$highest" = "$sb_ver" ] && ts_ssh_supported=true || ts_ssh_supported=false
+    else
+        ts_ssh_supported=false
+    fi
+
     # advertise_routes / advertise_tags: nguoi dung nhap dang chuoi phan
     # cach boi dau phay (VD "192.168.2.0/24, 192.168.3.0/24") tren WebUI ->
     # chuyen thanh JSON array qua jq, tu dong trim khoang trang va loai bo
@@ -542,6 +555,7 @@ build_endpoints_block() {
         --argjson exit_node_allow_lan_access "$ts_exl" \
         --argjson advertise_exit_node "$ts_advexit" \
         --argjson ssh_server "$ts_sshv" \
+        --argjson ssh_supported "$ts_ssh_supported" \
         --argjson advertise_routes "$adv_routes_json" \
         --argjson advertise_tags "$adv_tags_json" \
         '{
@@ -552,9 +566,9 @@ build_endpoints_block() {
             accept_routes: $accept_routes,
             ephemeral: $ephemeral,
             exit_node_allow_lan_access: $exit_node_allow_lan_access,
-            advertise_exit_node: $advertise_exit_node,
-            ssh_server: $ssh_server
+            advertise_exit_node: $advertise_exit_node
         }
+        + (if $ssh_supported then {ssh_server: $ssh_server} else {} end)
         + (if $authkey != "" then {auth_key: $authkey} else {} end)
         + (if $hostname != "" then {hostname: $hostname} else {} end)
         + (if $control_url != "" then {control_url: $control_url} else {} end)
@@ -894,6 +908,7 @@ install_watchdog() {
     cat >> "$WATCHDOG_FILE" <<-EOF
 [ -z "\`pidof sing-box\`" ] && $0 start #sing-box_watchdog
 $0 fix_resolv_conf #sing-box_watchdog
+$0 check_ts_conflict #sing-box_watchdog
 	EOF
 }
 
@@ -928,6 +943,22 @@ start() {
         return 0
     fi
 
+    # Tailscale native (tailscaled doc lap, tailscale_enable=1 tren ROM) va
+    # sing-box (bat ky mode/tinh nang nao - Mixed, TProxy, co hay khong dung
+    # Tailscale endpoint rieng cua sing-box) KHONG duoc chay cung luc: ca hai
+    # deu tu quan ly ip rule/routing table rieng o tang kernel, tung gay xung
+    # dot dan den mat mang toan bo va phai reboot moi phuc hoi duoc. Vi vay
+    # CHAN HAN sing-box khoi dong (khong chi rieng phan Tailscale endpoint)
+    # ngay khi phat hien Tailscale native dang bat/dang chay - KHONG dung gi
+    # toi Tailscale native (khong tu tat no). Muon dung sing-box, ban phai tu
+    # tat Tailscale native (Network Utilities) truoc, hoac dung han Tailscale
+    # endpoint tich hop san trong sing-box (singbox_ts_enable) thay the.
+    if [ "$(nv tailscale_enable)" = "1" ] || [ -n "$(pidof tailscaled)" ]; then
+        log "CẢNH BÁO: Tailscale native (tailscaled) đang bật -> CHẶN sing-box khởi động hoàn toàn để tránh xung đột ip rule/route kernel (từng gây mất mạng, phải reboot mới phục hồi). Tắt Tailscale native trong Network Utilities rồi Apply lại nếu muốn dùng sing-box (hoặc dùng Tailscale Endpoint tích hợp sẵn của sing-box thay thế)."
+        stop purge
+        return 1
+    fi
+
     if is_running; then
         log "Already running, skip"
         return 0
@@ -943,19 +974,6 @@ start() {
     # được resolve lại. Chỉ nên xóa cache thủ công khi thực sự cần debug.
 
     fix_resolv_conf
-
-    # Neu Tailscale Native Endpoint (chay trong chinh sing-box) dang duoc
-    # bat, PHAI dam bao tailscaled doc lap (app Tailscale rieng, mnvram
-    # tailscale_enable) KHONG chay song song - 2 kien truc cung quan ly
-    # Tailscale mesh cho cung 1 node se gay xung dot dang ky voi control
-    # plane (2 tailscaled instance dung chung state se bi Tailscale server
-    # tu logout 1 ben) va trung lap hoan toan chuc nang.
-    if [ "$(nv singbox_ts_enable)" = "1" ] && [ "$(nv tailscale_enable)" = "1" ]; then
-        log "singbox_ts_enable=1 -> tu dong TAT app Tailscale doc lap (tailscaled) de tranh 2 kien truc chay song song"
-        nvram set tailscale_enable=0
-        nvram commit
-        /usr/bin/tailscale.sh stop 2>/dev/null
-    fi
 
     if ! ensure_binary; then
         log "Cannot start: no working binary"
@@ -1032,6 +1050,16 @@ status() {
     fi
 }
 
+check_ts_conflict() {
+    # Chay dinh ky tu watchdog: bat Tailscale native SAU khi sing-box da
+    # dang chay (khong di qua start()) van phai bi phat hien va xu ly, khong
+    # chi luc start(). Chi tac dong khi sing-box dang song, tranh log rac.
+    if is_running && { [ "$(nv tailscale_enable)" = "1" ] || [ -n "$(pidof tailscaled)" ]; }; then
+        log "check_ts_conflict: phát hiện Tailscale native được bật trong khi sing-box đang chạy -> DỪNG sing-box để tránh xung đột kernel (không đụng gì tới Tailscale native)"
+        stop
+    fi
+}
+
 case "$1" in
     start)      start ;;
     stop)       stop ;;
@@ -1039,6 +1067,7 @@ case "$1" in
     status)     status ;;
     update_sub) rotate_log; update_sub "$2" ;;
     fix_resolv_conf) fix_resolv_conf ;;
+    check_ts_conflict) check_ts_conflict ;;
     reapply_iptables)
         # Goi sau moi lan Padavan flush/rebuild iptables (WAN reconnect, Apply
         # settings...) de chen lai chain SINGBOX + jump rule PREROUTING da bi
@@ -1046,5 +1075,5 @@ case "$1" in
         # dang song, tranh tao rule "mo coi" cho process khong ton tai.
         is_running && apply_iptables_mode
         ;;
-    *) echo "Usage: $0 {start|stop|restart|status|update_sub [force]|fix_resolv_conf|reapply_iptables}" ;;
+    *) echo "Usage: $0 {start|stop|restart|status|update_sub [force]|fix_resolv_conf|reapply_iptables|check_ts_conflict}" ;;
 esac
