@@ -245,9 +245,25 @@ EOF
 }
 
 build_route_block() {
-    bypass_vn="$1"; adblock="$2"; final_tag="$3"; rt_mode="$4"; dns_mode="$5"
+    bypass_vn="$1"; adblock="$2"; final_tag="$3"; rt_mode="$4"; dns_mode="$5"; ts_enable="$6"
     rulesets=""
     rules=""
+
+    # Traffic toi dai CGNAT cua Tailscale (100.64.0.0/10) phai duoc route vao
+    # outbound "ts-ep" (endpoint Tailscale native trong chinh sing-box), KHONG
+    # con duoc RETURN som o iptables/ipset de "bypass" ra kernel routing nhu
+    # kien truc cu (tailscaled doc lap + interface tailscale0 rieng). Vi gio
+    # khong con interface kernel do nua, neu khong co rule nay, packet toi
+    # peer Tailscale se bi TPROXY hut vao sing-box roi lai roi vao "final"
+    # (proxy VN/SG/JP...) - sai hoan toan, khong toi duoc peer thuc.
+    # PHAI dat truoc moi rule bypass_vn/adblock khac, va chi them khi endpoint
+    # ts-ep THAT SU ton tai trong config (ts_enable=1), neu khong tham chieu
+    # toi outbound khong ton tai se lam sing-box tu choi khoi dong (parse loi).
+    ts_route_rule=""
+    if [ "$ts_enable" = "1" ]; then
+        ts_route_rule='      { "ip_cidr": ["100.64.0.0/10"], "outbound": "ts-ep" },
+'
+    fi
 
     # default_domain_resolver phai tro toi 1 tag CO THAT SU ton tai trong
     # dns.servers cua build_dns_block() - moi nhanh dns_mode khai bao tag
@@ -322,10 +338,11 @@ ${rulesets%,
     ],
     "rules": [
 ${sniff_rule}      { "protocol": "dns", "action": "hijack-dns" },
-${resolve_rule}${rules}      { "ip_is_private": true, "outbound": "direct" }
+${ts_route_rule}${resolve_rule}${rules}      { "ip_is_private": true, "outbound": "direct" }
     ],
     "final": "${final_tag}",
     "auto_detect_interface": true,
+    "default_interface": "${WAN_IFACE}",
     "default_domain_resolver": "${default_resolver_tag}"
   },
 EOF
@@ -463,8 +480,119 @@ fetch_all_groups() {
     [ "$total_groups" -gt 0 ]
 }
 
+build_endpoints_block() {
+    ts_enable="$1"
+    if [ "$ts_enable" != "1" ]; then
+        return 0
+    fi
+
+    if ! have_jq; then
+        log "LỖI: không tìm thấy jq, không thể build Tailscale endpoint an toàn -> bỏ qua endpoints"
+        return 0
+    fi
+
+    ts_authkey="$(nv singbox_ts_authkey)"
+    ts_hostname="$(nv singbox_ts_hostname)"
+    ts_control_url="$(nv singbox_ts_control_url)"
+    ts_exit_node="$(nv singbox_ts_exit_node)"
+
+    ts_accept_routes="$(nv singbox_ts_accept_routes)";        [ "$ts_accept_routes" = "1" ] && ts_ar=true || ts_ar=false
+    ts_ephemeral="$(nv singbox_ts_ephemeral)";                [ "$ts_ephemeral" = "1" ] && ts_eph=true || ts_eph=false
+    ts_exit_lan="$(nv singbox_ts_exit_node_allow_lan)";       [ "$ts_exit_lan" = "1" ] && ts_exl=true || ts_exl=false
+    ts_adv_exit="$(nv singbox_ts_advertise_exit_node)";       [ "$ts_adv_exit" = "1" ] && ts_advexit=true || ts_advexit=false
+    ts_ssh="$(nv singbox_ts_ssh_server)";                     [ "$ts_ssh" = "1" ] && ts_sshv=true || ts_sshv=false
+
+    # advertise_routes / advertise_tags: nguoi dung nhap dang chuoi phan
+    # cach boi dau phay (VD "192.168.2.0/24, 192.168.3.0/24") tren WebUI ->
+    # chuyen thanh JSON array qua jq, tu dong trim khoang trang va loai bo
+    # phan tu rong (VD do dau phay du o cuoi chuoi).
+    adv_routes_json="$(echo "$(nv singbox_ts_advertise_routes)" | "$JQ_BIN" -R -c \
+        'split(",") | map(gsub("^[ \t]+|[ \t]+$";"")) | map(select(length>0))' 2>/dev/null)"
+    [ -z "$adv_routes_json" ] && adv_routes_json="[]"
+
+    adv_tags_json="$(echo "$(nv singbox_ts_advertise_tags)" | "$JQ_BIN" -R -c \
+        'split(",") | map(gsub("^[ \t]+|[ \t]+$";"")) | map(select(length>0))' 2>/dev/null)"
+    [ -z "$adv_tags_json" ] && adv_tags_json="[]"
+
+    # state_directory PHAI nam trong /etc/storage (persistent), KHONG duoc de
+    # o /tmp (RAM/tmpfs) - day la noi luu node identity/key dang nhap cua
+    # Tailscale. Neu de o /tmp, moi lan reboot mat sach, node bi coi la may
+    # moi hoan toan, phai dang nhap/auth lai tu dau.
+    #
+    # KHONG dat "system_interface": true - de Tailscale chay hoan toan trong
+    # userspace netstack cua chinh sing-box, KHONG tao interface tailscale0
+    # rieng o tang kernel. Day la diem khac biet mau chot so voi tailscaled
+    # doc lap truoc kia: khong con 2 tien trinh mang tranh nhau interface/
+    # route/policy rule (ip rule table 52 vs table 100), khong con nguy co
+    # sing-box "auto_detect_interface" chon nham tailscale0 lam WAN.
+    #
+    # Cac field dang chuoi (authkey/hostname/control_url/exit_node) CHI duoc
+    # them vao object khi khac rong - de trong hoan toan (khong gui key do)
+    # thay vi gui "" rong, vi mot so field ("control_url" rong co the bi
+    # sing-box hieu la "khong dung mac dinh" thay vi "dung default that");
+    # dung --arg cua jq de escape dung chuan JSON (an toan hon tr -cd truoc
+    # day, dung duoc voi hostname chua ky tu Unicode/gach ngang hop le).
+    ts_endpoint_json="$("$JQ_BIN" -nc \
+        --arg authkey "$ts_authkey" \
+        --arg hostname "$ts_hostname" \
+        --arg control_url "$ts_control_url" \
+        --arg exit_node "$ts_exit_node" \
+        --argjson accept_routes "$ts_ar" \
+        --argjson ephemeral "$ts_eph" \
+        --argjson exit_node_allow_lan_access "$ts_exl" \
+        --argjson advertise_exit_node "$ts_advexit" \
+        --argjson ssh_server "$ts_sshv" \
+        --argjson advertise_routes "$adv_routes_json" \
+        --argjson advertise_tags "$adv_tags_json" \
+        '{
+            type: "tailscale",
+            tag: "ts-ep",
+            state_directory: "/etc/storage/tailscale-sb",
+            system_interface: false,
+            accept_routes: $accept_routes,
+            ephemeral: $ephemeral,
+            exit_node_allow_lan_access: $exit_node_allow_lan_access,
+            advertise_exit_node: $advertise_exit_node,
+            ssh_server: $ssh_server
+        }
+        + (if $authkey != "" then {auth_key: $authkey} else {} end)
+        + (if $hostname != "" then {hostname: $hostname} else {} end)
+        + (if $control_url != "" then {control_url: $control_url} else {} end)
+        + (if $exit_node != "" then {exit_node: $exit_node} else {} end)
+        + (if ($advertise_routes|length) > 0 then {advertise_routes: $advertise_routes} else {} end)
+        + (if ($advertise_tags|length) > 0 then {advertise_tags: $advertise_tags} else {} end)
+        ' 2>/dev/null)"
+
+    if [ -z "$ts_endpoint_json" ]; then
+        log "LỖI: jq build Tailscale endpoint JSON thất bại (kiểm tra ký tự lạ trong hostname/control_url/exit_node) -> bỏ qua endpoints"
+        return 0
+    fi
+
+    echo "  \"endpoints\": [ ${ts_endpoint_json} ],"
+}
+
+get_wan_iface() {
+    # Padavan luu ten interface WAN thuc te (da qua PPPoE/DHCP) trong nvram
+    # wan_ifname - day la nguon dang tin cay nhat, khong phu thuoc thu tu
+    # bang routing luc goi lenh (khac voi parse "ip route" co the nham
+    # tailscale0 neu no vo tinh co default route rieng o mot thoi diem nao).
+    iface="$(nv wan_ifname)"
+    if [ -z "$iface" ]; then
+        # Fallback: lay interface cua default route hien tai, LOAI TRU
+        # tailscale0 tuong minh de tranh chinh sing-box tu chon nham no lam
+        # WAN khi Tailscale dang chay.
+        iface="$(ip route show default 2>/dev/null | grep -v tailscale0 | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -n1)"
+    fi
+    [ -z "$iface" ] && iface="eth2.2"
+    echo "$iface"
+}
+
 generate_config() {
     mode="$1"
+    WAN_IFACE="$(get_wan_iface)"
+
+    ts_enable="$(nv singbox_ts_enable)"
+    [ -z "$ts_enable" ] && ts_enable="0"
     
     mem_limit="$(nv singbox_mem_limit)"
     [ -z "$mem_limit" ] && mem_limit="192MiB"
@@ -531,8 +659,9 @@ generate_config() {
         echo "    \"cache_file\": { \"enabled\": true, \"path\": \"/tmp/sing-box/cache.db\", \"store_fakeip\": true }"
         echo "  },"
         echo "$inbound_block"
+        build_endpoints_block "$ts_enable"
         build_dns_block "$final_tag" "$dns_mode"
-        build_route_block "$bypass_vn" "$adblock" "$final_tag" "$mode" "$dns_mode"
+        build_route_block "$bypass_vn" "$adblock" "$final_tag" "$mode" "$dns_mode" "$ts_enable"
         echo "  \"outbounds\": ["
         echo "$selector_block"
         echo "$group_selectors_body"
@@ -570,9 +699,22 @@ apply_iptables_mode() {
 
         ipset create singbox_bypass hash:net 2>/dev/null
         ipset flush singbox_bypass 2>/dev/null
-        for cidr in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4; do
+        # 100.64.0.0/10 (CGNAT Tailscale) CHI duoc dua vao danh sach bypass
+        # (RETURN som, khong qua TPROXY) khi KHONG dung Tailscale native
+        # endpoint (singbox_ts_enable != 1) - tuc kien truc cu voi tailscaled
+        # doc lap + interface tailscale0 rieng o kernel, luc do traffic phai
+        # thoat ra ngoai TPROXY de kernel tu route qua interface do.
+        # Khi dung native endpoint (ts_enable=1), PHAI de traffic nay di qua
+        # TPROXY vao sing-box, vi ban than sing-box moi la noi giu ket noi
+        # Tailscale (khong con interface kernel nao ca) - route.rules da co
+        # san rule "100.64.0.0/10 -> outbound ts-ep" de xu ly tiep sau TPROXY.
+        ts_enable_ipt="$(nv singbox_ts_enable)"
+        for cidr in 0.0.0.0/8 10.0.0.0/8 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4; do
             ipset add singbox_bypass $cidr 2>/dev/null
         done
+        if [ "$ts_enable_ipt" != "1" ]; then
+            ipset add singbox_bypass 100.64.0.0/10 2>/dev/null
+        fi
 
         iptables -t mangle -N SINGBOX 2>/dev/null
         iptables -t mangle -F SINGBOX 2>/dev/null
@@ -802,6 +944,19 @@ start() {
 
     fix_resolv_conf
 
+    # Neu Tailscale Native Endpoint (chay trong chinh sing-box) dang duoc
+    # bat, PHAI dam bao tailscaled doc lap (app Tailscale rieng, mnvram
+    # tailscale_enable) KHONG chay song song - 2 kien truc cung quan ly
+    # Tailscale mesh cho cung 1 node se gay xung dot dang ky voi control
+    # plane (2 tailscaled instance dung chung state se bi Tailscale server
+    # tu logout 1 ben) va trung lap hoan toan chuc nang.
+    if [ "$(nv singbox_ts_enable)" = "1" ] && [ "$(nv tailscale_enable)" = "1" ]; then
+        log "singbox_ts_enable=1 -> tu dong TAT app Tailscale doc lap (tailscaled) de tranh 2 kien truc chay song song"
+        nvram set tailscale_enable=0
+        nvram commit
+        /usr/bin/tailscale.sh stop 2>/dev/null
+    fi
+
     if ! ensure_binary; then
         log "Cannot start: no working binary"
         return 1
@@ -884,5 +1039,12 @@ case "$1" in
     status)     status ;;
     update_sub) rotate_log; update_sub "$2" ;;
     fix_resolv_conf) fix_resolv_conf ;;
-    *) echo "Usage: $0 {start|stop|restart|status|update_sub [force]|fix_resolv_conf}" ;;
+    reapply_iptables)
+        # Goi sau moi lan Padavan flush/rebuild iptables (WAN reconnect, Apply
+        # settings...) de chen lai chain SINGBOX + jump rule PREROUTING da bi
+        # xoa boi qua trinh rebuild noi bo cua firmware. Chi chay khi sing-box
+        # dang song, tranh tao rule "mo coi" cho process khong ton tai.
+        is_running && apply_iptables_mode
+        ;;
+    *) echo "Usage: $0 {start|stop|restart|status|update_sub [force]|fix_resolv_conf|reapply_iptables}" ;;
 esac
