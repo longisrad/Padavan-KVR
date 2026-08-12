@@ -240,6 +240,7 @@ EOF
       { "tag": "dns-fakeip", "type": "fakeip", "inet4_range": "198.18.0.0/15" }
     ],
     "rules": [
+	  { "domain": [${SYSTEM_BYPASS}], "server": "dns-direct" },
       { "domain_suffix": ["githubusercontent.com", "github.com", "adguard.com", "adguard-dns.com"], "server": "dns-direct" },
       { "query_type": ["A", "AAAA"], "server": "dns-fakeip" }
     ],
