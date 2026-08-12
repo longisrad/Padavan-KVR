@@ -250,6 +250,24 @@ stop() {
         killall -9 AdGuardHome 2>/dev/null
     fi
 
+    # QUAN TRONG: services.c goi "adguardhome.sh stop" GIONG HET NHAU cho ca
+    # 2 truong hop - (a) chi Apply settings (adg_enable van =1, se goi lai
+    # "start" ngay sau day trong restart_adguardhome()) VA (b) tat han AGH
+    # (adg_enable=0, se KHONG goi "start" lai). Vi C dispatcher dung chung 1
+    # cau lenh "stop" cho ca 2 case, KHONG THE dua vao viec CLI nao duoc goi
+    # de quyet dinh purge - phai tu doc nvram adg_enable NGAY TAI DAY de biet
+    # dung la dang tat han hay chi la buoc 1 cua chu ky restart.
+    adg_enable_now="$(nvram get adg_enable 2>/dev/null)"
+    if [ "$1" = "purge" ] || [ "$adg_enable_now" != "1" ]; then
+        # Xoa sach $BIN_DIR (/tmp/AdGuardHome) - gom binary da tai (~vai
+        # chuc MB) VA thu muc work/ (querylog.json, stats.db, sessions.db...
+        # tich luy theo thoi gian, cung chiem RAM tuong tu cache cua
+        # sing-box). Chi xay ra khi THAT SU tat han (adg_enable != 1), KHONG
+        # xay ra khi day chi la buoc 1 cua chu ky Apply-settings-restart.
+        log "adg_enable=${adg_enable_now:-0} (tắt hẳn) -> dọn dẹp RAM tmpfs $BIN_DIR..."
+        rm -rf "$BIN_DIR"
+    fi
+
     log "Stopped"
 }
 
@@ -272,5 +290,5 @@ case "$1" in
     stop)    stop ;;
     restart) restart ;;
     status)  status ;;
-    *) echo "Usage: $0 {start|stop|restart|status}" ;;
+    *) echo "Usage: $0 {start|stop[=tự purge RAM nếu adg_enable!=1]|restart|status}" ;;
 esac
