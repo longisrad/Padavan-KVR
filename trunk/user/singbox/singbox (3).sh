@@ -256,6 +256,10 @@ build_route_block() {
     bypass_vn="$1"; adblock="$2"; final_tag="$3"; rt_mode="$4"; dns_mode="$5"; ts_enable="$6"
     rulesets=""
     rules=""
+	
+# --- CHÈN VÀO ĐÂY: Khai báo danh sách hệ thống cần đi thẳng ---
+    SYSTEM_BYPASS='"github.com", "githubusercontent.com", "raw.githubusercontent.com", "adguard.com", "adguard-dns.com", "adguardteam.github.io", "pool.ntp.org", "time.google.com"'
+    sys_bypass_rule='      { "domain": ['${SYSTEM_BYPASS}'], "outbound": "direct" },'
 
     ts_route_rule=""
     if [ "$ts_enable" = "1" ]; then
@@ -313,6 +317,7 @@ ${rulesets%,
     ],
     "rules": [
 ${sniff_rule}      { "protocol": "dns", "action": "hijack-dns" },
+${sys_bypass_rule}
 ${ts_route_rule}${resolve_rule}${rules}      { "ip_is_private": true, "outbound": "direct" }
     ],
     "final": "${final_tag}",
