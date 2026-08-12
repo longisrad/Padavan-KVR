@@ -41,8 +41,18 @@ body.body_iframe{
     background-image: url("../img/asus_logo3.png");
     width: 150px;
     height: 71px;
+    
+    /* Dòng này giúp ảnh to tự co lại cho vừa khung 150x71 */
+    background-size: contain; 
+    
+    /* Đảm bảo ảnh không bị lặp lại nếu nhỏ hơn khung */
+    background-repeat: no-repeat; 
+    
+    /* Căn ảnh vào giữa khung 150x71 */
+    background-position: center; 
+
     margin-top: 30px;
-    z-index:1;/* 置于上层 */
+    z-index: 1;
 }
 #logo:hover {
     cursor: pointer;
