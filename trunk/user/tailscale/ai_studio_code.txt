@@ -1,0 +1,174 @@
+#!/bin/sh
+
+# --- Khai báo biến hệ thống ---
+ts_enable=$(nvram get tailscale_enable)
+ts_dns=$(nvram get tailscale_dns)
+ts_route=$(nvram get tailscale_route)
+ts_routes="$(nvram get tailscale_routes)"
+ts_exit=$(nvram get tailscale_exit)
+ts_exitip="$(nvram get tailscale_exitip)"
+ts_server="$(nvram get tailscale_server)"
+ts_ssh=$(nvram get tailscale_ssh)
+ts_shields="$(nvram get tailscale_shields)"
+ts_host="$(nvram get tailscale_host)"
+ts_key=$(nvram get tailscale_key)
+ts_reset="$(nvram get tailscale_reset)"
+tailscaled="$(nvram get tailscale_bin)"
+[ -z "$tailscaled" ] && tailscaled=/tmp/tailscaled && nvram set tailscale_bin=$tailscaled
+
+tailscale="$(dirname "$tailscaled")/tailscale"
+user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+t_CMD="$(nvram get tailscale_cmd)"
+t2_CMD="$(nvram get tailscale_cmd2)"
+scriptfilepath=$(cd "$(dirname "$0")"; pwd)/$(basename $0)
+[ ! -d /etc/storage/tailscale ] && mkdir -p /etc/storage/tailscale
+tailscale_renum=`nvram get tailscale_renum`
+BUNDLED_TS_BIN="/etc/tailscaled.bin"
+
+# --- Hàm bổ trợ ---
+get_free_ram_mb() {
+	mem=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo 2>/dev/null)
+	[ -z "$mem" ] && mem=$(awk '/MemFree/ {print int($2/1024)}' /proc/meminfo 2>/dev/null)
+	echo "${mem:-0}"
+}
+
+extract_bundled_ts() {
+	if [ -f "$BUNDLED_TS_BIN" ] ; then
+		bin_path=$(dirname "$tailscaled")
+		[ ! -d "$bin_path" ] && mkdir -p "$bin_path"
+		cp "$BUNDLED_TS_BIN" "$tailscaled"
+		chmod +x "$tailscaled"
+		return 0
+	fi
+	return 1
+}
+
+# --- Hàm Dọn Dẹp (QUAN TRỌNG NHẤT) ---
+kill_ts() {
+	logger -t "【Tailscale】" "Đang tiến hành tắt và dọn dẹp hệ thống để tránh lỗi mạng..."
+	
+	# 1. Tắt watchdog
+	sed -Ei '/【Tailscaled】|^$/d' /tmp/script/_opt_script_check
+
+	# 2. Cố gắng logout để xóa route trên server (nếu mạng còn)
+	$tailscale logout >/dev/null 2>&1
+
+	# 3. Giết tiến trình
+	killall tailscaled tailscale >/dev/null 2>&1
+	sleep 1
+	if [ -n "$(pidof tailscaled)" ]; then
+		killall -9 tailscaled tailscale >/dev/null 2>&1
+	fi
+
+	# 4. Dọn dẹp Network Interface
+	if [ -d /sys/class/net/tailscale0 ]; then
+		ip link set tailscale0 down >/dev/null 2>&1
+		ip link delete tailscale0 >/dev/null 2>&1
+	fi
+
+	# 5. Xóa triệt để các bảng định tuyến và IP Rule (Fix lỗi không vào được mạng)
+	# Tailscale thường dùng Table 52 và Priority 52
+	while ip rule show | grep -q "52"; do
+		ip rule del priority 52 >/dev/null 2>&1
+		ip rule del table 52 >/dev/null 2>&1
+	done
+	ip route flush table 52 >/dev/null 2>&1
+	ip route flush cache
+
+	# 6. Xóa iptables
+	iptables -D INPUT -i tailscale0 -j ACCEPT 2>/dev/null
+	iptables -D FORWARD -i tailscale0 -j ACCEPT 2>/dev/null
+	iptables -D FORWARD -o tailscale0 -j ACCEPT 2>/dev/null
+
+	# 7. Dọn dẹp file tạm
+	rm -f /tmp/tailscale.log
+	rm -f /var/run/tailscale/tailscaled.sock
+	rm -f /tmp/.ts_hot_reloaded
+}
+
+get_tag() {
+	# Fetch version logic... (giữ nguyên của bạn)
+	tag="$( curl -k --connect-timeout 5 --user-agent "$user_agent" https://api.github.com/repos/lmq8267/tailscale/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
+	[ -z "$tag" ] && tag="v1.78.1"
+	nvram set tailscale_ver_n=$tag
+}
+
+dowload_ts() {
+	tag="$1"
+	dl_url="https://github.com/lmq8267/tailscale/releases/download/${tag}/tailscaled_full"
+	logger -t "【Tailscale】" "Đang tải Tailscale..."
+	curl -Lko "$tailscaled" --connect-timeout 15 "$dl_url"
+	chmod +x "$tailscaled"
+}
+
+build_up_cmd() {
+	CMD="up"
+	[ "$ts_dns" = "1" ] || CMD="${CMD} --accept-dns=false"
+	[ "$ts_route" = "1" ] && CMD="${CMD} --accept-routes"
+	[ -n "$ts_routes" ] && CMD="${CMD} --advertise-routes=${ts_routes}"
+	[ "$ts_exit" = "1" ] && CMD="${CMD} --advertise-exit-node"
+	[ -n "$ts_exitip" ] && CMD="${CMD} --exit-node=${ts_exitip} --exit-node-allow-lan-access"
+	[ -n "$ts_server" ] && CMD="${CMD} --login-server=${ts_server}"
+	[ "$ts_ssh" = "1" ] && CMD="${CMD} --ssh"
+	[ -n "$ts_host" ] && CMD="${CMD} --hostname=${ts_host}"
+	[ -n "$ts_key" ] && CMD="${CMD} --auth-key=${ts_key}"
+	[ "$ts_reset" = "1" ] && CMD="${CMD} --reset"
+	CMD="${tailscale} ${CMD}"
+}
+
+start_ts() {
+	[ "$ts_enable" = "0" ] && stop_ts && exit 0
+	
+	logger -t "【Tailscale】" "Đang khởi động..."
+	[ ! -f "$tailscaled" ] && extract_bundled_ts
+	[ ! -f "$tailscaled" ] && get_tag && dowload_ts "$tag"
+
+	kill_ts # Dọn dẹp trước khi chạy để tránh xung đột
+
+	mkdir -p /var/run/tailscale /etc/storage/tailscale/lib
+	
+	# Tối ưu RAM cho Newifi 3 (512MB)
+	export GOMEMLIMIT=96MiB
+	export GOGC=50
+	
+	tdCMD="$tailscaled --state=/etc/storage/tailscale/lib/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock"
+	eval "$tdCMD >>/tmp/tailscale.log 2>&1" &
+	
+	sleep 5
+	if [ -n "$(pidof tailscaled)" ]; then
+		logger -t "【Tailscale】" "Daemon đã chạy, đang cấu hình route..."
+		iptables -I INPUT -i tailscale0 -j ACCEPT 2>/dev/null
+		build_up_cmd
+		eval "$CMD >>/tmp/tailscale.log 2>&1" &
+		# Watchdog
+		[ -s /tmp/script/_opt_script_check ] && echo '[ -z "`pidof tailscaled`" ] && /tmp/tailscale_fix2.sh start' >> /tmp/script/_opt_script_check
+	else
+		logger -t "【Tailscale】" "Lỗi khởi động daemon!"
+	fi
+}
+
+stop_ts() {
+	kill_ts
+	logger -t "【Tailscale】" "Đã tắt hoàn toàn. Bạn có thể bật Sing-box bây giờ."
+}
+
+case $1 in
+start)
+	start_ts &
+	;;
+stop)
+	stop_ts
+	;;
+restart)
+	stop_ts
+	sleep 2
+	start_ts &
+	;;
+*)
+	if [ "$ts_enable" = "0" ]; then
+		[ -n "$(pidof tailscaled)" ] && stop_ts
+	else
+		[ -z "$(pidof tailscaled)" ] && start_ts
+	fi
+	;;
+esac
