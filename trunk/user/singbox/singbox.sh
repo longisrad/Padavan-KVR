@@ -34,7 +34,7 @@ JQ_BIN="/usr/bin/jq"
 
 # --- Danh sách Bypass mặc định cho Router & AGH ---
 # Đảm bảo router luôn tải được bộ lọc, binary và đồng bộ thời gian
-SYSTEM_BYPASS_LIST='"github.com", "githubusercontent.com", "raw.githubusercontent.com", "adguard.com", "adguard-dns.com", "adguardteam.github.io", "pool.ntp.org", "time.google.com", "testingcf.jsdelivr.net", "metacubex.one"'
+SYSTEM_BYPASS='"github.com", "githubusercontent.com", "raw.githubusercontent.com", "adguard.com", "adguard-dns.com", "adguardteam.github.io", "pool.ntp.org", "time.google.com", "testingcf.jsdelivr.net", "metacubex.one"'
 
 log() {
     logger -t "$LOG_TAG" "$1"
