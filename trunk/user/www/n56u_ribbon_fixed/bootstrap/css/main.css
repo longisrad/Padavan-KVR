@@ -1,10 +1,16 @@
-body{
-    /* background: url("../img/bg/wood.jpg") repeat scroll center top transparent; */
-    background: url("../img/bg/wood1.jpg") no-repeat scroll center top transparent;
-    background-size: cover;  /* 使背景图像覆盖整个页面，保持其比例，避免出现拼接 */
+body {
+    /* Ảnh nền được thiết lập full màn hình, cố định không trôi khi cuộn */
+    background-image: url("../img/bg/wood1.jpg");
+    background-repeat: no-repeat;
+    background-attachment: fixed; /* Cố định nền */
+    background-position: center center; /* Căn giữa ảnh */
+    background-size: cover; /* Quan trọng: Tự động scale phủ kín màn hình */
+    
     background-color: #0a0414;
+    min-height: 100vh; /* Đảm bảo chiều cao luôn bằng 100% màn hình */
+    margin: 0;
     overflow-y: scroll;
-    z-index:-1;
+    z-index: -1;
 }
 body.body_iframe{
     background-color: rgba(34, 34, 34, 0);
