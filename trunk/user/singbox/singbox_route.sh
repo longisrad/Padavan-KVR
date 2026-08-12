@@ -42,6 +42,7 @@ start_routing() {
     ipset flush singbox_bypass 2>/dev/null
     for cidr in 0.0.0.0/8 10.0.0.0/8 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4; do
         ipset add singbox_bypass $cidr 2>/dev/null
+        ipset add singbox_bypass 198.18.0.0/15 2>/dev/null
     done
 
     # 5. Bẻ lái Traffic từ thiết bị LAN đi qua TProxy (Mangle Table)
@@ -100,6 +101,9 @@ start_routing() {
     if [ -f /etc/resolv.conf ] && grep -q "^nameserver 127.0.0.1$" /etc/resolv.conf; then
         sed -i '/^nameserver 127.0.0.1$/d' /etc/resolv.conf
     fi
+    # --- Fix cho chính Router & AGH (Chuỗi OUTPUT) ---
+    # Ép router bỏ qua dải IP nội bộ và Fake-IP khi tự nó kết nối ra ngoài
+    iptables -t mangle -I OUTPUT -m set --match-set singbox_bypass dst -j RETURN
 
     log "Đã kích hoạt toàn bộ quy tắc định tuyến TProxy & FakeIP thành công!"
     return 0
