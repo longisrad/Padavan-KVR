@@ -31,7 +31,7 @@ table.table th[style*=background-color] {
 /* highlight sidebar active menu */
 .sidebar-nav.side_nav .active a,
 .sidebar-nav.side_nav a[href*="javascript: void(0)"] {
-    color: #FF7A0B !important;
+    color: #B026FF !important;
 }
 
 /* proper crop for toggle buttons */
@@ -65,7 +65,7 @@ select#sel_netif {
 /* LAN page > MAC addresses, WAP page > IP addresses, USB page > dlna, dropdown tooltip is white */
 div.alert.alert-info.ddown-list,
 div#ClientList_Block {
-    background-color: rgba(245, 245, 245, 0.71) !important;
+    background-color: rgba(21, 10, 36, 0.92) !important;
 }
 
 /* LAN page > MAC address field on one row */
