@@ -377,7 +377,7 @@ ${ts_route_rule}${resolve_rule}${rules}      { "ip_is_private": true, "outbound"
     ],
     "final": "${final_tag}",
     "auto_detect_interface": true,
-    "default_interface": "${WAN_IFACE}",
+    "default_mark": 255,
     "default_domain_resolver": "${default_resolver_tag}"
   },
 EOF
