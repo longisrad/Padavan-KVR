@@ -34,6 +34,7 @@ start_routing() {
 
     # 3. Tạo Bảng định tuyến Policy Routing (Table 100)
     while ip rule del fwmark 1 table 100 2>/dev/null; do :; done
+    ip route flush table 100 2>/dev/null
     ip rule add fwmark 1 table 100 2>/dev/null
     ip route add local default dev lo table 100 2>/dev/null
 
