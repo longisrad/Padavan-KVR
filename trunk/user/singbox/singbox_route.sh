@@ -64,8 +64,10 @@ start_routing() {
     # dev lo table 100) giu nguyen source IP goc cua client, co the bi kernel
     # strict reverse-path check danh gia sai va am tham drop tren mot so
     # topology mang/kernel config.
-    echo 0 > /proc/sys/net/ipv4/conf/$LAN_IFACE/rp_filter 2>/dev/null
-    echo 0 > /proc/sys/net/ipv4/conf/lo/rp_filter 2>/dev/null
+    echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter 2>/dev/null
+echo 0 > /proc/sys/net/ipv4/conf/default/rp_filter 2>/dev/null
+echo 0 > /proc/sys/net/ipv4/conf/$LAN_IFACE/rp_filter 2>/dev/null
+echo 0 > /proc/sys/net/ipv4/conf/lo/rp_filter 2>/dev/null
 
     # (Da bo: rule REDIRECT OUTPUT -d $FAKEIP_RANGE -> TPROXY_PORT nham fix
     # traffic FakeIP xuat phat tu chinh Router. Da kiem tra thuc te bang
