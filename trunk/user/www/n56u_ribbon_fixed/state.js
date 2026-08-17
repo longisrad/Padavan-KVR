@@ -479,7 +479,7 @@ if (found_app_bafa()){
 	tabtitle[32] = new Array("", "巴法云");
 }
 if (found_app_singbox()){
-	tabtitle[35] = new Array("", "sing-box");
+	tabtitle[35] = new Array("", "Sing-box");
 }
 if (found_app_virtualhere()){
 	tabtitle[33] = new Array("", "VirtualHere");
