@@ -137,7 +137,7 @@ build_dns_block() {
         case "$dns_mode" in
             0) agh_rule_bare='      { "inbound": "dns-in-agh", "server": "dns-direct" }' ;;
             2) agh_rule_bare='      { "inbound": "dns-in-agh", "server": "dns-doh" }' ;;
-            *) agh_rule='      { "inbound": "dns-in-agh", "server": "dns-remote" },
+            *) [ "$(nv singbox_agh_fakeip)" = "1" ] || agh_rule='      { "inbound": "dns-in-agh", "server": "dns-remote" },
 ' ;;
         esac
     fi
