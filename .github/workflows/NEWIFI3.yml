@@ -54,6 +54,18 @@ jobs:
         # sed -i 's/^# CONFIG_MT76X2_AP_TXBF_SUPPORT is not set/CONFIG_MT76X2_AP_TXBF_SUPPORT=y/' /opt/rt-n56u/trunk/configs/boards/NEWIFI3/kernel-3.4.x.config
         # Tắt LLTD (chỉ phục vụ Network Map của Windows):
         # sed -i 's/^CONFIG_MT76X2_AP_LLTD=y/# CONFIG_MT76X2_AP_LLTD is not set/; s/^CONFIG_MT7603E_LLTD_SUPPORT=y/# CONFIG_MT7603E_LLTD_SUPPORT is not set/' /opt/rt-n56u/trunk/configs/boards/NEWIFI3/kernel-3.4.x.config
+        ##### CAKE qdisc (port của TW641, kernel 3.4.113)
+        git clone --depth=1 https://github.com/TW641/sch_cake.git /tmp/sch_cake
+        NS=/opt/rt-n56u/trunk/linux-3.4.x/net/sched
+        ls -la "/tmp/sch_cake/Padavan 3.4.113"
+        cp -f "/tmp/sch_cake/Padavan 3.4.113/"*.[ch] $NS/
+        # Makefile
+        sed -i '/CONFIG_NET_SCH_FQ_CODEL/a obj-$(CONFIG_NET_SCH_CAKE)\t+= sch_cake.o' $NS/Makefile
+        # Kconfig (chèn trước mục Classification)
+        sed -i '/^comment "Classification"/i config NET_SCH_CAKE\n\ttristate "Common Applications Kept Enhanced (CAKE)"\n\thelp\n\t  CAKE scheduler.\n' $NS/Kconfig
+        # bật trong kernel config (=y để khỏi lo đóng gói module)
+        echo "CONFIG_NET_SCH_CAKE=y" >> /opt/rt-n56u/trunk/configs/boards/NEWIFI3/kernel-3.4.x.config
+        grep -n CAKE $NS/Makefile $NS/Kconfig
     - name: Setup Go
       uses: actions/setup-go@v5
       with:
