@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title><#Web_Title#> - CAKE SQM</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<link rel="stylesheet" type="text/css" href="/bootstrap/css/bootstrap.min.css">
+<link rel="stylesheet" type="text/css" href="/bootstrap/css/main.css">
+<link rel="stylesheet" type="text/css" href="/bootstrap/css/engage.itoggle.css">
+<script type="text/javascript" src="/jquery.js"></script>
+<script type="text/javascript" src="/bootstrap/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="/bootstrap/js/engage.itoggle.min.js"></script>
+<script type="text/javascript" src="/state.js"></script>
+<script type="text/javascript" src="/general.js"></script>
+<script type="text/javascript" src="/itoggle.js"></script>
+<script type="text/javascript" src="/popup.js"></script>
+<script type="text/javascript" src="/help.js"></script>
+
+<script>
+var $j = jQuery.noConflict();
+var hw_nat_val = '<% nvram_get_x("", "hw_nat_mode"); %>';
+
+$j(document).ready(function() {
+	init_itoggle('cake_enable');
+	init_itoggle('cake_drop_hwnat');
+	init_itoggle('cake_nat');
+	init_itoggle('cake_wash');
+	updateUiVisibility();
+
+	$j('#cake_enable_on_of').on('click', function(){ setTimeout(updateUiVisibility, 50); });
+	$j('#cake_drop_hwnat_on_of').on('click', function(){ setTimeout(updateUiVisibility, 50); });
+});
+
+function initial(){
+	show_banner(2);
+	// Tu dong tim dung index cua CAKE trong menuL2 de highlight tren thanh dieu huong
+	var menu_idx = 0;
+	if (typeof menuL2_link !== 'undefined') {
+		for (var i = 1; i < menuL2_link.length; i++) {
+			if (menuL2_link[i] && menuL2_link[i].indexOf("Advanced_cake.asp") !== -1) {
+				menu_idx = i;
+				break;
+			}
+		}
+	}
+	show_menu(5, menu_idx, 0);
+	show_footer();
+	updateUiVisibility();
+	setTimeout(updateUiVisibility, 100);
+}
+
+function updateUiVisibility(){
+	var en = $j('#cake_enable_fake').is(':checked');
+	var drop_hwnat = $j('#cake_drop_hwnat_fake').is(':checked');
+
+	// An hien toan bo thiet lap con theo nut Bat CAKE
+	$j('#row_cake_settings').css('display', en ? '' : 'none');
+
+	// Canh bao xung dot Hardware NAT
+	if (en && hw_nat_val !== "0" && !drop_hwnat) {
+		$j('#hwnat_warning_box').slideDown(200);
+	} else {
+		$j('#hwnat_warning_box').slideUp(200);
+	}
+}
+
+function applyRule(){
+	if(validForm()){
+		showLoading();
+		document.form.action_mode.value = " Apply ";
+		document.form.action_script.value = "";
+		document.form.current_page.value = "/Advanced_cake.asp";
+		document.form.submit();
+	}
+}
+
+function validForm(){
+	if($j('#cake_enable_fake').is(':checked')){
+		if(!validate_range(document.form.cake_down_bw, 0, 10000000)){
+			alert("Vui lòng nhập tốc độ Download hợp lệ (Kbps, 0 = không bóp Download)!");
+			document.form.cake_down_bw.focus();
+			return false;
+		}
+		if(!validate_range(document.form.cake_up_bw, 1, 10000000)){
+			alert("Vui lòng nhập tốc độ Upload hợp lệ (Kbps)!");
+			document.form.cake_up_bw.focus();
+			return false;
+		}
+	}
+	return true;
+}
+
+function get_cake_status(){
+	$j('#btn_refresh_stat').addClass('disabled').attr('disabled', true);
+	$j('#cake_stats_area').text("Đang trích xuất dữ liệu hàng đợi CAKE từ nhân Linux...");
+	$j.ajax({
+		type: "POST",
+		url: "/apply.cgi",
+		data: {
+			action_mode: " SystemCmd ",
+			action_script: "syscmd.sh",
+			SystemCmd: "/sbin/cake.sh status > /tmp/cake_stats.txt"
+		},
+		dataType: "text",
+		success: function(){
+			setTimeout(function(){
+				$j.ajax({
+					url: '/tmp/cake_stats.txt',
+					type: 'GET',
+					dataType: 'text',
+					cache: false,
+					success: function(data){
+						$j('#cake_stats_area').text(data.trim() || "CAKE chưa chạy hoặc chưa có luồng gói tin.");
+						$j('#btn_refresh_stat').removeClass('disabled').attr('disabled', false);
+					},
+					error: function(){
+						$j('#cake_stats_area').text("Chưa có dữ liệu thống kê (CAKE đang Tắt).");
+						$j('#btn_refresh_stat').removeClass('disabled').attr('disabled', false);
+					}
+				});
+			}, 600);
+		}
+	});
+}
+</script>
+</head>
+
+<body onload="initial();">
+<div class="wrapper">
+	<div class="container-fluid" style="padding-right:0px">
+		<div class="row-fluid">
+			<div class="span3"><center><div id="logo"></div></center></div>
+			<div class="span9"><div id="TopBanner"></div></div>
+		</div>
+	</div>
+	<div id="Loading" class="popup_bg"></div>
+	<iframe name="hidden_frame" id="hidden_frame" width="0" height="0" frameborder="0"></iframe>
+
+	<form method="post" name="form" action="/start_apply.htm" target="hidden_frame">
+	<input type="hidden" name="current_page" value="Advanced_cake.asp">
+	<input type="hidden" name="next_page" value="">
+	<input type="hidden" name="sid_list" value="CakeConf;">
+	<input type="hidden" name="action_mode" value="">
+	<input type="hidden" name="action_script" value="">
+
+	<div class="container-fluid">
+	<div class="row-fluid">
+	<div class="span3">
+	<div class="well sidebar-nav side_nav" style="padding:0px;">
+		<ul id="mainMenu" class="clearfix"></ul>
+		<ul class="clearfix"><li><div id="subMenu" class="accordion"></div></li></ul>
+	</div>
+	</div>
+
+	<div class="span9">
+	<div class="row-fluid"><div class="span12">
+	<div class="box well grad_colour_dark_blue">
+	<h2 class="box_head round_top">CAKE Smart Queue Management (SQM)</h2>
+	<div class="round_bottom">
+
+	<div class="alert alert-info" style="margin:10px;">
+		Thuật toán quản lý hàng đợi thế hệ mới (Bufferbloat Killer) tích hợp <b>Triple-Isolate</b>, <b>Diffserv</b> và <b>ACK-Filter</b>.
+		<div>Tối ưu độ trễ cho Game Online, Voice Call và Livestream ngay cả khi mạng đang tải tối đa.</div>
+	</div>
+
+	<!-- CẢNH BÁO XUNG ĐỘT HW NAT -->
+	<div id="hwnat_warning_box" style="display:none; margin:10px 10px 0 10px;">
+		<div class="alert alert-danger" style="margin:0; background-color:#f2dede; border:1px solid #ebccd1; color:#a94442; padding:10px; border-radius:4px;">
+			⚠️ <b>Cảnh báo xung đột:</b> Tăng tốc phần cứng (Hardware Acceleration / HW NAT) hiện đang <b>BẬT</b>.
+			Gói tin sẽ chuyển tiếp trực tiếp qua chip và <b>hoàn toàn bỏ qua CAKE</b>.
+			<br/>👉 Hãy bật công tắc <b>"Tự động ngắt HW NAT khi CAKE chạy"</b> ở bảng bên dưới để CAKE hoạt động chính xác.
+		</div>
+	</div>
+
+	<!-- BẢNG 1: ĐIỀU KHIỂN CƠ BẢN -->
+	<table width="100%" cellpadding="4" cellspacing="0" class="table" style="margin-top:10px;">
+	<tr><th colspan="2" style="background-color:#756c78;">Basic Control</th></tr>
+	<tr>
+		<th width="30%">Bật CAKE SQM</th>
+		<td>
+			<div class="main_itoggle">
+				<div id="cake_enable_on_of">
+					<input type="checkbox" id="cake_enable_fake" <% nvram_match_x("", "cake_enable", "1", "value=1 checked"); %><% nvram_match_x("", "cake_enable", "0", "value=0"); %> />
+				</div>
+			</div>
+			<div style="position: absolute; margin-left: -10000px;">
+				<input type="radio" value="1" name="cake_enable" id="cake_enable_1" class="input" <% nvram_match_x("", "cake_enable", "1", "checked"); %> /><#checkbox_Yes#>
+				<input type="radio" value="0" name="cake_enable" id="cake_enable_0" class="input" <% nvram_match_x("", "cake_enable", "0", "checked"); %> /><#checkbox_No#>
+			</div>
+		</td>
+	</tr>
+	</table>
+
+	<!-- KHỐI CẤU HÌNH CON: CHỈ HIỆN KHI BẬT CAKE -->
+	<div id="row_cake_settings">
+
+	<!-- BẢNG 2: CƠ CHẾ KẾT HỢP VỚI HARDWARE NAT -->
+	<table width="100%" cellpadding="4" cellspacing="0" class="table">
+	<tr><th colspan="2" style="background-color:#756c78;">Cơ chế kết hợp Hardware NAT</th></tr>
+	<tr>
+		<th width="30%">Tự động ngắt HW NAT</th>
+		<td>
+			<div class="main_itoggle">
+				<div id="cake_drop_hwnat_on_of">
+					<input type="checkbox" id="cake_drop_hwnat_fake" <% nvram_match_x("", "cake_drop_hwnat", "1", "value=1 checked"); %><% nvram_match_x("", "cake_drop_hwnat", "0", "value=0"); %> />
+				</div>
+			</div>
+			<div style="position: absolute; margin-left: -10000px;">
+				<input type="radio" value="1" name="cake_drop_hwnat" id="cake_drop_hwnat_1" class="input" <% nvram_match_x("", "cake_drop_hwnat", "1", "checked"); %> /><#checkbox_Yes#>
+				<input type="radio" value="0" name="cake_drop_hwnat" id="cake_drop_hwnat_0" class="input" <% nvram_match_x("", "cake_drop_hwnat", "0", "checked"); %> /><#checkbox_No#>
+			</div>
+			<span style="color:#888; margin-left:10px; display:inline-block; vertical-align:middle;">
+				Tự động gỡ module HW NAT để CPU quản lý luồng; khôi phục lại khi CAKE tắt (khuyên BẬT).
+			</span>
+		</td>
+	</tr>
+	</table>
+
+	<!-- BẢNG 3: GIỚI HẠN BĂNG THÔNG -->
+	<table width="100%" cellpadding="4" cellspacing="0" class="table">
+	<tr><th colspan="2" style="background-color:#756c78;">Băng thông giới hạn (Bandwidth Shaping)</th></tr>
+	<tr>
+		<th width="30%">Tốc độ Download (Kbps)</th>
+		<td>
+			<input type="text" name="cake_down_bw" class="input" style="width:140px;" maxlength="10" value="<% nvram_get_x("", "cake_down_bw"); %>" />
+			<span style="color:#888; margin-left:8px;">Kbps (Điền <b>0</b> để thả nổi Download, chỉ quản lý Upload).</span>
+		</td>
+	</tr>
+	<tr>
+		<th>Tốc độ Upload (Kbps)</th>
+		<td>
+			<input type="text" name="cake_up_bw" class="input" style="width:140px;" maxlength="10" value="<% nvram_get_x("", "cake_up_bw"); %>" />
+			<span style="color:#888; margin-left:8px;">Kbps (Khuyên đặt khoảng <b>85% - 90%</b> tốc độ Upload thực tế của gói cước).</span>
+		</td>
+	</tr>
+	</table>
+
+	<!-- BẢNG 4: THAM SỐ THUẬT TOÁN CAKE -->
+	<table width="100%" cellpadding="4" cellspacing="0" class="table">
+	<tr><th colspan="2" style="background-color:#756c78;">Tham số thuật toán CAKE</th></tr>
+	<tr>
+		<th width="30%">Cách ly luồng (Flow Isolation)</th>
+		<td>
+			<select name="cake_flow_mode" class="input" style="width:360px;">
+				<option value="triple-isolate" <% nvram_match_x("","cake_flow_mode","triple-isolate","selected"); %>>Triple-Isolate (Host + Flow - Khuyên dùng)</option>
+				<option value="flows" <% nvram_match_x("","cake_flow_mode","flows","selected"); %>>Flows (Công bằng theo từng luồng kết nối)</option>
+				<option value="hosts" <% nvram_match_x("","cake_flow_mode","hosts","selected"); %>>Hosts (Công bằng theo từng IP thiết bị)</option>
+				<option value="besteffort" <% nvram_match_x("","cake_flow_mode","besteffort","selected"); %>>Besteffort (Không cách ly)</option>
+			</select>
+		</td>
+	</tr>
+	<tr>
+		<th>Phân loại ưu tiên (Diffserv)</th>
+		<td>
+			<select name="cake_diffserv" class="input" style="width:360px;">
+				<option value="diffserv4" <% nvram_match_x("","cake_diffserv","diffserv4","selected"); %>>Diffserv4 (4 hàng đợi ưu tiên - Tiêu chuẩn)</option>
+				<option value="diffserv3" <% nvram_match_x("","cake_diffserv","diffserv3","selected"); %>>Diffserv3 (3 hàng đợi ưu tiên)</option>
+				<option value="diffserv8" <% nvram_match_x("","cake_diffserv","diffserv8","selected"); %>>Diffserv8 (8 hàng đợi chuyên sâu)</option>
+				<option value="besteffort" <% nvram_match_x("","cake_diffserv","besteffort","selected"); %>>Besteffort (1 hàng đợi đơn)</option>
+			</select>
+		</td>
+	</tr>
+	<tr>
+		<th>Độ trễ mục tiêu (RTT)</th>
+		<td>
+			<select name="cake_rtt" class="input" style="width:360px;">
+				<option value="internet" <% nvram_match_x("","cake_rtt","internet","selected"); %>>Internet (100ms - Mạng gia đình phổ thông)</option>
+				<option value="metro" <% nvram_match_x("","cake_rtt","metro","selected"); %>>Metro (10ms - Đô thị / Cáp quang ping cực thấp)</option>
+				<option value="regional" <% nvram_match_x("","cake_rtt","regional","selected"); %>>Regional (30ms - Khu vực)</option>
+				<option value="oceanic" <% nvram_match_x("","cake_rtt","oceanic","selected"); %>>Oceanic (300ms - Kết nối xuyên lục địa)</option>
+			</select>
+		</td>
+	</tr>
+	<tr>
+		<th>Bù trừ đóng gói (Overhead)</th>
+		<td>
+			<select name="cake_overhead" class="input" style="width:360px;">
+				<option value="none" <% nvram_match_x("","cake_overhead","none","selected"); %>>Không bù trừ (None / 0 byte)</option>
+				<option value="ethernet" <% nvram_match_x("","cake_overhead","ethernet","selected"); %>>Ethernet (14 byte overhead)</option>
+				<option value="atm" <% nvram_match_x("","cake_overhead","atm","selected"); %>>ADSL / ATM (44 byte overhead)</option>
+				<option value="ptm" <% nvram_match_x("","cake_overhead","ptm","selected"); %>>VDSL2 / PTM (8 byte overhead)</option>
+				<option value="docsis" <% nvram_match_x("","cake_overhead","docsis","selected"); %>>DOCSIS Cable (18 byte)</option>
+			</select>
+		</td>
+	</tr>
+	<tr>
+		<th>Lọc gói ACK (ACK Filter)</th>
+		<td>
+			<select name="cake_ack_filter" class="input" style="width:360px;">
+				<option value="none" <% nvram_match_x("","cake_ack_filter","none","selected"); %>>Tắt (None)</option>
+				<option value="ack-filter" <% nvram_match_x("","cake_ack_filter","ack-filter","selected"); %>>Bật (Khuyên dùng khi Upload chậm)</option>
+				<option value="ack-filter-aggressive" <% nvram_match_x("","cake_ack_filter","ack-filter-aggressive","selected"); %>>Aggressive (Lọc mạnh tay)</option>
+			</select>
+		</td>
+	</tr>
+	<tr>
+		<th>Nhận diện qua NAT</th>
+		<td>
+			<div class="main_itoggle">
+				<div id="cake_nat_on_of">
+					<input type="checkbox" id="cake_nat_fake" <% nvram_match_x("", "cake_nat", "1", "value=1 checked"); %><% nvram_match_x("", "cake_nat", "0", "value=0"); %> />
+				</div>
+			</div>
+			<div style="position: absolute; margin-left: -10000px;">
+				<input type="radio" value="1" name="cake_nat" id="cake_nat_1" class="input" <% nvram_match_x("", "cake_nat", "1", "checked"); %> /><#checkbox_Yes#>
+				<input type="radio" value="0" name="cake_nat" id="cake_nat_0" class="input" <% nvram_match_x("", "cake_nat", "0", "checked"); %> /><#checkbox_No#>
+			</div>
+			<span style="color:#888; margin-left:10px; display:inline-block; vertical-align:middle;">Nhận diện IP máy trạm nội bộ chuẩn xác hơn khi đi qua NAT.</span>
+		</td>
+	</tr>
+	<tr>
+		<th>Wash DSCP</th>
+		<td>
+			<div class="main_itoggle">
+				<div id="cake_wash_on_of">
+					<input type="checkbox" id="cake_wash_fake" <% nvram_match_x("", "cake_wash", "1", "value=1 checked"); %><% nvram_match_x("", "cake_wash", "0", "value=0"); %> />
+				</div>
+			</div>
+			<div style="position: absolute; margin-left: -10000px;">
+				<input type="radio" value="1" name="cake_wash" id="cake_wash_1" class="input" <% nvram_match_x("", "cake_wash", "1", "checked"); %> /><#checkbox_Yes#>
+				<input type="radio" value="0" name="cake_wash" id="cake_wash_0" class="input" <% nvram_match_x("", "cake_wash", "0", "checked"); %> /><#checkbox_No#>
+			</div>
+			<span style="color:#888; margin-left:10px; display:inline-block; vertical-align:middle;">Tẩy các nhãn DSCP từ bên ngoài vào để tránh bị nhà mạng làm lệch ưu tiên.</span>
+		</td>
+	</tr>
+	<tr>
+		<th>Tham số tùy biến (Custom)</th>
+		<td>
+			<input type="text" name="cake_custom" class="input" style="width:60%;" maxlength="128" value="<% nvram_get_x("", "cake_custom"); %>" placeholder="memlimit 32M qerror" />
+			<span style="color:#888; margin-left:8px;">Các tham số bổ sung tùy ý cho lệnh tc qdisc cake.</span>
+		</td>
+	</tr>
+	</table>
+
+	<!-- BẢNG 5: THỐNG KÊ LUỒNG TỨC THỜI -->
+	<table width="100%" cellpadding="4" cellspacing="0" class="table">
+	<tr>
+		<th colspan="2" style="background-color:#756c78;">
+			Thống kê hàng đợi thời gian thực (Realtime Statistics)
+			<input id="btn_refresh_stat" class="btn btn-mini btn-info" style="float:right;" type="button" value="🔄 Cập nhật thống kê" onclick="get_cake_status();" />
+		</th>
+	</tr>
+	<tr>
+		<td colspan="2">
+			<textarea id="cake_stats_area" style="width:98%; height:180px; font-family:'Courier New',monospace; font-size:11px; background-color:#1e1e1e; color:#76d275;" readonly>Bấm "Cập nhật thống kê" để xem số liệu gói tin, drop/mark của hàng đợi CAKE từ router...</textarea>
+		</td>
+	</tr>
+	</table>
+
+	</div>
+	<!-- /row_cake_settings -->
+
+	<!-- NÚT APPLY CHUẨN CĂN GIỮA -->
+	<div style="margin:15px;">
+		<center><input class="btn btn-primary" style="width:219px;" type="button" value="<#CTL_apply#>" onclick="applyRule();" /></center>
+	</div>
+
+	</div>
+	</div>
+	</div></div>
+	</div>
+	</div>
+	</div>
+	</form>
+	<div id="footer"></div>
+</div>
+</body>
+</html>
