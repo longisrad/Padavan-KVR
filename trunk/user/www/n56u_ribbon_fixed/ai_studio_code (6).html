@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title><#Web_Title#> - CAKE SQM</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="-1">
+
+<link rel="shortcut icon" href="images/favicon.ico">
+<link rel="icon" href="images/favicon.png">
+<link rel="stylesheet" type="text/css" href="/bootstrap/css/bootstrap.min.css">
+<link rel="stylesheet" type="text/css" href="/bootstrap/css/main.css">
+<link rel="stylesheet" type="text/css" href="/bootstrap/css/engage.itoggle.css">
+
+<script type="text/javascript" src="/jquery.js"></script>
+<script type="text/javascript" src="/bootstrap/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="/bootstrap/js/engage.itoggle.min.js"></script>
+<script type="text/javascript" src="/state.js"></script>
+<script type="text/javascript" src="/general.js"></script>
+<script type="text/javascript" src="/itoggle.js"></script>
+<script type="text/javascript" src="/popup.js"></script>
+<script type="text/javascript" src="/help.js"></script>
+
+<script>
+var $j = jQuery.noConflict();
+<% login_state_hook(); %>
+
+$j(document).ready(function(){
+	init_itoggle('cake_enable');
+	init_itoggle('cake_nat');
+	init_itoggle('cake_wash');
+	init_itoggle('cake_dscp_auto');
+	updateUi();
+	$j('#cake_enable_on_of').on('click', function(){ setTimeout(updateUi, 50); });
+});
+
+function sel(n, v){
+	var e = document.form[n];
+	if (!e) return;
+	for (var i = 0; i < e.options.length; i++){
+		if (e.options[i].value == v){ e.selectedIndex = i; return; }
+	}
+}
+
+function initial(){
+	show_banner(1);
+	show_menu(7, 37, 1);
+	show_footer();
+
+	// Đọc từ NVRAM đổ vào các dropdown nâng cao
+	sel("cake_flow_mode",  "<% nvram_get_x("", "cake_flow_mode"); %>");
+	sel("cake_diffserv",   "<% nvram_get_x("", "cake_diffserv"); %>");
+	sel("cake_rtt",        "<% nvram_get_x("", "cake_rtt"); %>");
+	sel("cake_overhead",   "<% nvram_get_x("", "cake_overhead"); %>");
+	sel("cake_ack_filter", "<% nvram_get_x("", "cake_ack_filter"); %>");
+
+	// Khôi phục bộ nhớ tạm cho công cụ tính và Kịch bản từ localStorage
+	try {
+		var savedDown = localStorage.getItem('cake_raw_down');
+		var savedUp = localStorage.getItem('cake_raw_up');
+		var savedPreset = localStorage.getItem('cake_preset_val');
+		var savedRatio = localStorage.getItem('cake_ratio_val');
+
+		if (savedDown) $j('#raw_down').val(savedDown);
+		if (savedUp) $j('#raw_up').val(savedUp);
+		if (savedRatio) $j('#calc_ratio').val(savedRatio);
+		if (savedPreset) $j('#preset_select').val(savedPreset);
+	} catch(e) {}
+
+	updateUi();
+	setTimeout(updateUi, 100);
+	setTimeout(updateUi, 500);
+
+	refresh_status();
+}
+
+function cake_is_on(){
+	return $j('#cake_enable_fake').is(':checked');
+}
+
+function updateUi(){
+	document.getElementById("cake_settings").style.display = cake_is_on() ? "" : "none";
+}
+
+function toggleAdvanced(){
+	var tb = document.getElementById("cake_advanced_tbody");
+	if (tb) tb.style.display = (tb.style.display === "none") ? "" : "none";
+}
+
+function toggleRawLog(){
+	var box = document.getElementById("cake_raw_box");
+	if (box) box.style.display = (box.style.display === "none") ? "" : "none";
+}
+
+function set_itoggle(name, val){
+	var chk = $j('#' + name + '_fake');
+	var r1 = $j('#' + name + '_1');
+	var r0 = $j('#' + name + '_0');
+	if (val == 1) {
+		chk.attr("checked", "checked").attr("value", 1);
+		r1.attr("checked", "checked");
+		r0.removeAttr("checked");
+		$j('#' + name + '_on_of label.itoggle').css("background-position", '0% -27px');
+	} else {
+		chk.removeAttr("checked").attr("value", 0);
+		r0.attr("checked", "checked");
+		r1.removeAttr("checked");
+		$j('#' + name + '_on_of label.itoggle').css("background-position", '0% 0%');
+	}
+}
+
+// Khi thay đổi Kịch bản hoặc bấm nút Tính
+function onPresetChange(){
+	var preset = $j('#preset_select').val();
+	var rawDown = parseFloat($j('#raw_down').val());
+	var rawUp = parseFloat($j('#raw_up').val());
+	var ratio = parseFloat($j('#calc_ratio').val());
+
+	// Lưu lựa chọn vào localStorage
+	try {
+		localStorage.setItem('cake_preset_val', preset);
+		localStorage.setItem('cake_ratio_val', ratio);
+		if (!isNaN(rawDown)) localStorage.setItem('cake_raw_down', rawDown);
+		if (!isNaN(rawUp)) localStorage.setItem('cake_raw_up', rawUp);
+	} catch(e) {}
+
+	if (preset === "mt7621_opt") {
+		document.form.cake_down_bw.value = "0";
+		sel("cake_flow_mode", "triple-isolate");
+		sel("cake_diffserv", "diffserv3");
+		sel("cake_rtt", "internet");
+		sel("cake_overhead", "ethernet");
+		sel("cake_ack_filter", "ack-filter");
+		set_itoggle('cake_nat', 1);
+		set_itoggle('cake_wash', 0);
+		set_itoggle('cake_dscp_auto', 1);
+		document.form.cake_custom.value = "";
+		if (!isNaN(rawUp) && rawUp > 0) {
+			document.form.cake_up_bw.value = Math.round(rawUp * ratio);
+		}
+	} else if (preset === "ping_opt") {
+		sel("cake_flow_mode", "triple-isolate");
+		sel("cake_diffserv", "diffserv3");
+		sel("cake_rtt", "internet");
+		sel("cake_overhead", "ethernet");
+		sel("cake_ack_filter", "ack-filter");
+		set_itoggle('cake_nat', 1);
+		set_itoggle('cake_wash', 1);
+		set_itoggle('cake_dscp_auto', 1);
+		if (!isNaN(rawDown) && rawDown > 0) document.form.cake_down_bw.value = Math.round(rawDown * ratio);
+		if (!isNaN(rawUp) && rawUp > 0) document.form.cake_up_bw.value = Math.round(rawUp * ratio);
+	} else if (preset === "stream_game") {
+		sel("cake_flow_mode", "dual-srchost");
+		sel("cake_diffserv", "diffserv4");
+		sel("cake_rtt", "internet");
+		sel("cake_overhead", "ethernet");
+		sel("cake_ack_filter", "ack-filter");
+		set_itoggle('cake_nat', 1);
+		set_itoggle('cake_wash', 0);
+		set_itoggle('cake_dscp_auto', 1);
+		if (!isNaN(rawDown) && rawDown > 0) document.form.cake_down_bw.value = Math.round(rawDown * ratio);
+		if (!isNaN(rawUp) && rawUp > 0) document.form.cake_up_bw.value = Math.round(rawUp * ratio);
+	} else if (preset === "custom") {
+		if (!isNaN(rawDown) && rawDown > 0) document.form.cake_down_bw.value = Math.round(rawDown * ratio);
+		if (!isNaN(rawUp) && rawUp > 0) document.form.cake_up_bw.value = Math.round(rawUp * ratio);
+	}
+}
+
+var pingSamples = [];
+function runQuickPing(){
+	var btn = $j('#btn_ping');
+	var res = $j('#ping_result');
+	btn.prop('disabled', true).val('⏳ Đang đo...');
+	res.html('<span style="color:#f0ad4e;">Đang gửi 5 gói tin kiểm tra...</span>');
+	pingSamples = [];
+	
+	var i = 0;
+	function sample(){
+		if (i >= 5) {
+			var sum = 0;
+			for (var k=0; k<pingSamples.length; k++) sum += pingSamples[k];
+			var avg = Math.round(sum / pingSamples.length);
+			var jitterSum = 0;
+			for (var j=1; j<pingSamples.length; j++) jitterSum += Math.abs(pingSamples[j] - pingSamples[j-1]);
+			var jitter = Math.round(jitterSum / (pingSamples.length - 1));
+			
+			res.html('<b style="color:#5cb85c;">Ping: ' + avg + ' ms</b> | <b style="color:#5bc0de;">Jitter: ' + jitter + ' ms</b>');
+			btn.prop('disabled', false).val('⚡ Đo Ping Ngay');
+			return;
+		}
+		var t0 = performance.now();
+		fetch('https://1.1.1.1/cdn-cgi/trace?_=' + Math.random(), { mode: 'no-cors', cache: 'no-store' })
+		.then(function(){
+			pingSamples.push(Math.round(performance.now() - t0));
+			i++;
+			setTimeout(sample, 150);
+		}).catch(function(){
+			pingSamples.push(Math.round(performance.now() - t0));
+			i++;
+			setTimeout(sample, 150);
+		});
+	}
+	sample();
+}
+
+function parseStatus(text){
+	var isHwNat = /hw_nat:\s*module=da nap/i.test(text);
+	var downVal = document.form.cake_down_bw.value.trim();
+	var isDownZero = (downVal === "0" || downVal === "");
+
+	if (isHwNat) {
+		if (isDownZero) {
+			$j('#dash_hwnat').html('<span class="label label-warning" style="font-size:12px;">⭐ Tối ưu Hybrid (HW_NAT gánh Download)</span>');
+		} else {
+			$j('#dash_hwnat').html('<span class="label label-important" style="font-size:12px;">⚠️ HW_NAT đang chạy (Bỏ qua CAKE Down)</span>');
+		}
+	} else {
+		$j('#dash_hwnat').html('<span class="label label-success" style="font-size:12px;">Thuần CAKE (CPU xử lý)</span>');
+	}
+
+	var upDropped = "0", upPkDelay = "0us", upSent = "0 pkt";
+	var upSection = text.split(/--- [^ ]+ \(download\) ---/)[0];
+	var mDrop = upSection.match(/dropped (\d+)/i);
+	if (mDrop) upDropped = mDrop[1];
+	var mPk = upSection.match(/pk_delay\s+([0-9a-z]+)/i);
+	if (mPk) upPkDelay = mPk[1];
+	var mSent = upSection.match(/Sent \d+ bytes (\d+ pkt)/i);
+	if (mSent) upSent = mSent[1];
+
+	$j('#dash_up_stats').html('<b>' + upPkDelay + '</b> <span style="color:#aaa;">/ ' + upDropped + ' drop</span>');
+	$j('#dash_sent_pkts').html('<b>' + upSent + '</b>');
+}
+
+function refresh_status(){
+	var x = new XMLHttpRequest();
+	x.open("POST", "/apply.cgi", true);
+	x.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+	x.onreadystatechange = function(){
+		if (x.readyState == 4) {
+			var txt = (x.status == 200) ? x.responseText : "Không đọc được trạng thái";
+			document.getElementById("cake_status").value = txt;
+			parseStatus(txt);
+		}
+	};
+	x.send("action_mode=%20GetCakeStatus%20");
+}
+
+function check_rate(o){
+	if (o.value == "") o.value = "0";
+	if (!/^[0-9]+(\.[0-9]+)?$/.test(o.value)){
+		alert("Tốc độ phải là số (đơn vị Mbit), 0 = không giới hạn");
+		o.focus();
+		return false;
+	}
+	return true;
+}
+
+function applyRule(){
+	if (!check_rate(document.form.cake_down_bw) || !check_rate(document.form.cake_up_bw))
+		return;
+	if (!/^[A-Za-z0-9 ._-]*$/.test(document.form.cake_custom.value)){
+		alert("Tuỳ chọn thêm chỉ được chứa chữ, số, khoảng trắng, dấu chấm, gạch ngang, gạch dưới");
+		document.form.cake_custom.focus();
+		return;
+	}
+
+	// Lưu các giá trị tạm trước khi submit
+	try {
+		localStorage.setItem('cake_raw_down', $j('#raw_down').val());
+		localStorage.setItem('cake_raw_up', $j('#raw_up').val());
+		localStorage.setItem('cake_preset_val', $j('#preset_select').val());
+		localStorage.setItem('cake_ratio_val', $j('#calc_ratio').val());
+	} catch(e) {}
+
+	showLoading();
+	document.form.action_mode.value = " Apply ";
+	document.form.action_script.value = "restart_cake";
+	document.form.current_page.value = "/Advanced_cake.asp";
+	document.form.next_page.value = "";
+	document.form.submit();
+}
+</script>
+</head>
+
+<body onload="initial();" onunload="unload_body();">
+
+<div class="wrapper">
+	<div class="container-fluid" style="padding-right: 0px">
+		<div class="row-fluid">
+			<div class="span3"><center><div id="logo"></div></center></div>
+			<div class="span9"><div id="TopBanner"></div></div>
+		</div>
+	</div>
+
+	<div id="Loading" class="popup_bg"></div>
+	<iframe name="hidden_frame" id="hidden_frame" src="" width="0" height="0" frameborder="0"></iframe>
+
+	<form method="post" name="form" id="ruleForm" action="/start_apply.htm" target="hidden_frame">
+	<input type="hidden" name="current_page" value="Advanced_cake.asp">
+	<input type="hidden" name="next_page" value="">
+	<input type="hidden" name="next_host" value="">
+	<input type="hidden" name="sid_list" value="CakeConf;">
+	<input type="hidden" name="group_id" value="">
+	<input type="hidden" name="action_mode" value="">
+	<input type="hidden" name="action_script" value="">
+
+	<div class="container-fluid">
+		<div class="row-fluid">
+			<div class="span3">
+				<div class="well sidebar-nav side_nav" style="padding: 0px;">
+					<ul id="mainMenu" class="clearfix"></ul>
+					<ul class="clearfix"><li><div id="subMenu" class="accordion"></div></li></ul>
+				</div>
+			</div>
+
+			<div class="span9">
+				<div class="row-fluid">
+					<div class="span12">
+						<div class="box well grad_colour_dark_blue">
+							<h2 class="box_head round_top">CAKE SQM Bufferbloat Control</h2>
+							<div class="round_bottom">
+
+								<div class="alert alert-info" style="margin: 10px;">
+									CAKE giảm triệt để Bufferbloat giúp ổn định Ping tuyệt đối khi mạng có tải.
+									<div>Khuyên dùng: Đặt tốc độ bằng <b>85% - 90%</b> tốc độ thực tế. Đặt <b>0</b> cho tải xuống nếu muốn HW_NAT gánh max băng thông (tiết kiệm CPU cho MT7621).</div>
+								</div>
+
+								<!-- BẢNG 1: ĐIỀU KHIỂN CHÍNH -->
+								<table width="100%" cellpadding="4" cellspacing="0" class="table">
+								<tr><th colspan="2" style="background-color:#756c78;">Điều khiển & Thiết lập nhanh</th></tr>
+								<tr>
+									<th width="30%">Bật CAKE</th>
+									<td>
+										<div class="main_itoggle">
+											<div id="cake_enable_on_of">
+												<input type="checkbox" id="cake_enable_fake" <% nvram_match_x("", "cake_enable", "1", "value=1 checked"); %><% nvram_match_x("", "cake_enable", "0", "value=0"); %>>
+											</div>
+										</div>
+										<div style="position: absolute; margin-left: -10000px;">
+											<input type="radio" value="1" name="cake_enable" id="cake_enable_1" class="input" <% nvram_match_x("", "cake_enable", "1", "checked"); %> /><#checkbox_Yes#>
+											<input type="radio" value="0" name="cake_enable" id="cake_enable_0" class="input" <% nvram_match_x("", "cake_enable", "0", "checked"); %> /><#checkbox_No#>
+										</div>
+									</td>
+								</tr>
+								</table>
+
+								<div id="cake_settings">
+
+								<!-- BẢNG 2: BỘ CÔNG CỤ TÍNH VÀ KỊCH BẢN (TỰ NHẢY SỐ NGAY KHI CHỌN) -->
+								<table width="100%" cellpadding="4" cellspacing="0" class="table">
+								<tr><th colspan="2" style="background-color:#756c78;">Công cụ Shaper Calculator & Presets</th></tr>
+								<tr>
+									<th width="30%">Tốc độ đo thực tế (Speedtest)</th>
+									<td>
+										<input type="text" id="raw_down" class="input" style="width:75px;" placeholder="Down thực" onchange="onPresetChange();"> Mbit &nbsp;|&nbsp;
+										<input type="text" id="raw_up" class="input" style="width:75px;" placeholder="Up thực" onchange="onPresetChange();"> Mbit
+										<span style="color:#aaa; margin-left:10px; font-size:12px;">(Nhập kết quả khi test mạng lúc rảnh)</span>
+									</td>
+								</tr>
+								<tr>
+									<th>Kịch bản mẫu & Tự tính</th>
+									<td>
+										<select id="preset_select" class="input" style="width:52%;" onchange="onPresetChange();">
+											<option value="mt7621_opt">⭐ Tối ưu MT7621 (HW_NAT + Down 0 + Upload CAKE)</option>
+											<option value="ping_opt">🛡️ Ưu tiên Ping tuyệt đối (Bufferbloat A+ cả 2 chiều)</option>
+											<option value="stream_game">🎮 Gaming / Streamer (Diffserv4 + Dual-srchost)</option>
+											<option value="custom">✏️ Tuỳ chỉnh theo tỉ lệ tính toán</option>
+										</select>
+										<select id="calc_ratio" class="input" style="width:22%; margin-left:5px;" onchange="onPresetChange();">
+											<option value="0.85">Trừ hao 85%</option>
+											<option value="0.90">Trừ hao 90%</option>
+											<option value="0.80">Trừ hao 80%</option>
+										</select>
+										<input class="btn btn-info btn-small" type="button" value="⚡ Tính lại" onclick="onPresetChange();" style="margin-left:5px;">
+									</td>
+								</tr>
+								<tr>
+									<th>Đo Ping & Jitter nhanh</th>
+									<td>
+										<input class="btn btn-success btn-small" id="btn_ping" type="button" value="⚡ Đo Ping Ngay" onclick="runQuickPing();">
+										<span id="ping_result" style="margin-left:12px; font-size:13px; font-weight:bold;">Chưa đo</span>
+									</td>
+								</tr>
+								</table>
+
+								<!-- BẢNG 3: TỐC ĐỘ SHAPER ÁP DỤNG (ĐÃ GẮN TRỰC TIẾP NVRAM GET, KHÔNG BAO GIỜ BỊ TRẮNG) -->
+								<table width="100%" cellpadding="4" cellspacing="0" class="table">
+								<tr><th colspan="2" style="background-color:#756c78;">Tốc độ Shaper áp dụng (Bandwidth Limit)</th></tr>
+								<tr>
+									<th width="30%">Tốc độ tải xuống (Mbit)</th>
+									<td>
+										<input type="text" name="cake_down_bw" id="cake_down_bw" class="input" maxlength="8" style="width:100px;" value="<% nvram_get_x("", "cake_down_bw"); %>">
+										<span style="color:#aaa; margin-left:10px;">Mbit/s (Điền <b>0</b> = thả nổi không giới hạn, đỡ tốn CPU).</span>
+									</td>
+								</tr>
+								<tr>
+									<th>Tốc độ tải lên (Mbit)</th>
+									<td>
+										<input type="text" name="cake_up_bw" id="cake_up_bw" class="input" maxlength="8" style="width:100px;" value="<% nvram_get_x("", "cake_up_bw"); %>">
+										<span style="color:#aaa; margin-left:10px;">Mbit/s (Nên đặt bằng 85% tốc độ Upload thực tế).</span>
+									</td>
+								</tr>
+								</table>
+
+								<!-- BẢNG 4: TUỲ CHỌN NÂNG CAO -->
+								<table width="100%" cellpadding="4" cellspacing="0" class="table">
+								<thead>
+									<tr>
+										<th colspan="2" style="background-color:#756c78;">
+											Tuỳ chọn nâng cao (Advanced Options)
+											<input class="btn btn-mini" style="float:right;" type="button" value="Hiện / Ẩn" onclick="toggleAdvanced();" />
+										</th>
+									</tr>
+								</thead>
+								<tbody id="cake_advanced_tbody" style="display:none;">
+								<tr>
+									<th width="30%">Tự động gắn nhãn DSCP</th>
+									<td>
+										<div class="main_itoggle">
+											<div id="cake_dscp_auto_on_of">
+												<input type="checkbox" id="cake_dscp_auto_fake" <% nvram_match_x("", "cake_dscp_auto", "1", "value=1 checked"); %><% nvram_match_x("", "cake_dscp_auto", "0", "value=0"); %>>
+											</div>
+										</div>
+										<div style="position: absolute; margin-left: -10000px;">
+											<input type="radio" value="1" name="cake_dscp_auto" id="cake_dscp_auto_1" class="input" <% nvram_match_x("", "cake_dscp_auto", "1", "checked"); %> /><#checkbox_Yes#>
+											<input type="radio" value="0" name="cake_dscp_auto" id="cake_dscp_auto_0" class="input" <% nvram_match_x("", "cake_dscp_auto", "0", "checked"); %> /><#checkbox_No#>
+										</div>
+										<span style="color:#aaa; margin-left:10px;">Tự động phân loại gói DNS, Voice vào EF/CS6 và Game online vào CS5 qua iptables.</span>
+									</td>
+								</tr>
+								<tr>
+									<th>Chế độ chia luồng (Flow Mode)</th>
+									<td>
+										<select name="cake_flow_mode" class="input">
+											<option value="auto">auto (dual-srchost tải lên / dual-dsthost tải xuống)</option>
+											<option value="triple-isolate">triple-isolate (Khuyên dùng - chia đều theo máy và luồng)</option>
+											<option value="dual-srchost">dual-srchost</option>
+											<option value="dual-dsthost">dual-dsthost</option>
+											<option value="hosts">hosts</option>
+											<option value="flows">flows</option>
+											<option value="flowblind">flowblind</option>
+										</select>
+									</td>
+								</tr>
+								<tr>
+									<th>Phân loại DSCP</th>
+									<td>
+										<select name="cake_diffserv" class="input">
+											<option value="diffserv3">diffserv3 (3 làn: Bulk, Best Effort, Voice/Game)</option>
+											<option value="diffserv4">diffserv4 (4 làn chi tiết)</option>
+											<option value="besteffort">besteffort (Không phân nhóm ưu tiên)</option>
+										</select>
+									</td>
+								</tr>
+								<tr>
+									<th>RTT (Round-Trip Time)</th>
+									<td>
+										<select name="cake_rtt" class="input">
+											<option value="internet">internet (Mặc định ~100ms)</option>
+											<option value="metro">metro (~10ms)</option>
+											<option value="regional">regional (~30ms)</option>
+											<option value="oceanic">oceanic (~300ms)</option>
+											<option value="lan">lan (~1ms)</option>
+										</select>
+									</td>
+								</tr>
+								<tr>
+									<th>Overhead (loại đường truyền)</th>
+									<td>
+										<select name="cake_overhead" class="input">
+											<option value="ethernet">ethernet (Chuẩn mạng LAN / Cáp quang thông thường)</option>
+											<option value="ether-vlan">ether-vlan (Có VLAN tag)</option>
+											<option value="pppoe-ptm">pppoe-ptm</option>
+											<option value="raw">raw</option>
+											<option value="conservative">conservative</option>
+										</select>
+									</td>
+								</tr>
+								<tr>
+									<th>ACK filter (chiều tải lên)</th>
+									<td>
+										<select name="cake_ack_filter" class="input">
+											<option value="ack-filter">ack-filter (Bật - Lọc thông minh gói ACK, khuyên dùng)</option>
+											<option value="none">Tắt</option>
+											<option value="ack-filter-aggressive">ack-filter-aggressive (Lọc gắt)</option>
+										</select>
+									</td>
+								</tr>
+								<tr>
+									<th>NAT</th>
+									<td>
+										<div class="main_itoggle"><div id="cake_nat_on_of"><input type="checkbox" id="cake_nat_fake" <% nvram_match_x("", "cake_nat", "1", "value=1 checked"); %><% nvram_match_x("", "cake_nat", "0", "value=0"); %>></div></div>
+										<div style="position: absolute; margin-left: -10000px;">
+											<input type="radio" value="1" name="cake_nat" id="cake_nat_1" class="input" <% nvram_match_x("", "cake_nat", "1", "checked"); %> /><#checkbox_Yes#>
+											<input type="radio" value="0" name="cake_nat" id="cake_nat_0" class="input" <% nvram_match_x("", "cake_nat", "0", "checked"); %> /><#checkbox_No#>
+										</div>
+									</td>
+								</tr>
+								<tr>
+									<th>Wash (xoá DSCP gói tải xuống)</th>
+									<td>
+										<div class="main_itoggle"><div id="cake_wash_on_of"><input type="checkbox" id="cake_wash_fake" <% nvram_match_x("", "cake_wash", "1", "value=1 checked"); %><% nvram_match_x("", "cake_wash", "0", "value=0"); %>></div></div>
+										<div style="position: absolute; margin-left: -10000px;">
+											<input type="radio" value="1" name="cake_wash" id="cake_wash_1" class="input" <% nvram_match_x("", "cake_wash", "1", "checked"); %> /><#checkbox_Yes#>
+											<input type="radio" value="0" name="cake_wash" id="cake_wash_0" class="input" <% nvram_match_x("", "cake_wash", "0", "checked"); %> /><#checkbox_No#>
+										</div>
+									</td>
+								</tr>
+								<tr>
+									<th>Tuỳ chọn thêm cho tc</th>
+									<td><input type="text" name="cake_custom" class="input" maxlength="64" size="30" value="<% nvram_get_x("", "cake_custom"); %>" placeholder="overhead 46 ..."></td>
+								</tr>
+								</tbody>
+								</table>
+
+								</div>
+
+								<!-- BẢNG 5: GIÁM SÁT TRẠNG THÁI -->
+								<table width="100%" cellpadding="4" cellspacing="0" class="table">
+								<thead>
+									<tr><th colspan="2" style="background-color:#756c78;">Bảng điều khiển & Giám sát trạng thái</th></tr>
+								</thead>
+								<tbody>
+								<tr>
+									<td colspan="2" style="padding:10px;">
+										<table class="table table-bordered table-striped" style="margin-bottom:8px;">
+											<thead>
+												<tr style="background-color:#5a525d; color:#fff;">
+													<th width="35%" style="text-align:center;">Phần cứng / HW_NAT</th>
+													<th width="35%" style="text-align:center;">Độ trễ đỉnh / Gói rớt (Upload)</th>
+													<th width="30%" style="text-align:center;">Lưu lượng CAKE kiểm soát</th>
+												</tr>
+											</thead>
+											<tbody>
+												<tr>
+													<td style="text-align:center; vertical-align:middle;" id="dash_hwnat">Đang kiểm tra...</td>
+													<td style="text-align:center; vertical-align:middle; font-size:13px;" id="dash_up_stats">0us / 0 drop</td>
+													<td style="text-align:center; vertical-align:middle; font-size:13px; color:#5cb85c;" id="dash_sent_pkts">0 pkt</td>
+												</tr>
+											</tbody>
+										</table>
+
+										<div style="margin: 8px 0; text-align:right;">
+											<input class="btn btn-mini btn-info" type="button" value="🔍 Hiện/Ẩn log chi tiết (tc -s)" onclick="toggleRawLog();" />
+										</div>
+
+										<div id="cake_raw_box" style="display:none; margin-top:5px;">
+											<textarea id="cake_status" rows="16" wrap="off" readonly style="width:98%; font-family:'Courier New',monospace; font-size:11px; background:#1e1e1e; color:#00ff66;"></textarea>
+										</div>
+									</td>
+								</tr>
+								</tbody>
+								</table>
+
+								<!-- BẢNG 6: NÚT ÁP DỤNG & LÀM MỚI -->
+								<div style="margin:15px; text-align:center;">
+									<input class="btn btn-primary" style="width:219px;" type="button" value="<#CTL_apply#>" onclick="applyRule();" />
+									<input class="btn btn-warning" style="width:150px; margin-left:10px;" type="button" value="🔄 Làm mới trạng thái" onclick="refresh_status();" />
+								</div>
+
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	</form>
+
+	<div id="footer"></div>
+</div>
+</body>
+</html>
