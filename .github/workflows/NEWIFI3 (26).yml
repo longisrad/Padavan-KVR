@@ -53,8 +53,8 @@ jobs:
         set -e
         R=/opt/rt-n56u/trunk
 
-        ##### /tmp = 250M cho RAM 512MB
-        sed -i 's/size_tmp="[0-9]*M"/size_tmp="250M"/' $R/user/scripts/dev_init.sh
+        ##### /tmp = 200M cho RAM 512MB
+        sed -i 's/size_tmp="[0-9]*M"/size_tmp="200M"/' $R/user/scripts/dev_init.sh
         grep -n 'size_tmp' $R/user/scripts/dev_init.sh
 
         ##### Fix dosfstools
