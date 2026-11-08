@@ -328,7 +328,7 @@ jobs:
         # Tắt các dịch vụ nặng không dùng để tiết kiệm Flash
         echo "CONFIG_FIRMWARE_INCLUDE_CADDY=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_FFMPEG_NEW=n" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_TAILSCALE=n" >> .config  # Dùng Tailscale trong sing-box
+        echo "CONFIG_FIRMWARE_INCLUDE_TAILSCALE=y" >> .config  # Dùng Tailscale trong sing-box
         echo "CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_ARIA=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_MINIDLNA=n" >> .config
