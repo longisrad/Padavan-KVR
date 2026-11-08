@@ -1,0 +1,398 @@
+# Build Padavan cho Newifi 3 D2 (Tích hợp sẵn sing-box-lite & AdGuardHome vào ROM)
+name: 新三NEWIFI3
+
+on: 
+  workflow_dispatch:
+
+permissions:
+  contents: write
+env:
+  TZ: Asia/Shanghai
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot \
+        cpio git python3-docutils gettext automake autopoint texinfo build-essential help2man \
+        pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget file qemu-user-static
+
+    - name: Install UPX
+      uses: crazy-max/ghaction-upx@v3
+      with:
+        version: v4.2.4
+        install-only: true
+
+    - name: Clone source code
+      env:
+        KERNEL: 3.4
+      run: |
+        git clone --depth=1 https://github.com/${GITHUB_REPOSITORY}.git /opt/rt-n56u
+        cd /opt/rt-n56u/toolchain-mipsel
+        sh dl_toolchain.sh
+        mkdir -p /opt/images/
+        
+        ##### CẤU HÌNH PHÂN VÙNG BỘ NHỚ CHUẨN (Storage 2MB để dành 29.7MB cho ROM)
+        sed -i 's/^CONFIG_MTD_STORE_PART_SIZ=.*/CONFIG_MTD_STORE_PART_SIZ=0x200000/' /opt/rt-n56u/trunk/configs/boards/NEWIFI3/kernel-3.4.x.config
+        sed -i 's/size_etc="[0-9]*M"/size_etc="6M"/g' /opt/rt-n56u/trunk/user/scripts/dev_init.sh
+        sed -i 's/mtd_part_size=[0-9]*/mtd_part_size=2097152/g' /opt/rt-n56u/trunk/user/scripts/mtd_storage.sh
+
+        ##### WIFI: 5GHz mặc định US -> CN
+        sed -i 's/\(DEF_WLAN_5G_CC[[:space:]]*\)"US"/\1"CN"/' /opt/rt-n56u/trunk/user/shared/defaults.h
+
+    - name: Fix dosfstools timestamps + add CAKE (sch_cake, iproute2 5.12.0)
+      run: |
+        set -e
+        R=/opt/rt-n56u/trunk
+
+        ##### /tmp = 250M cho RAM 512MB
+        sed -i 's/size_tmp="[0-9]*M"/size_tmp="250M"/' $R/user/scripts/dev_init.sh
+        grep -n 'size_tmp' $R/user/scripts/dev_init.sh
+
+        ##### Fix dosfstools
+        D=$R/user/dosfstools/dosfstools-4.2
+        if [ -d "$D" ]; then
+          touch $D/aclocal.m4; sleep 1
+          touch $D/configure $D/config.h.in 2>/dev/null || true; sleep 1
+          find $D -name Makefile.in -exec touch {} +
+        fi
+
+        ##### CAKE: mượn sch_cake.c + iproute2 5.12.0
+        git clone --depth=1 https://github.com/TW641/padavan-ng /tmp/tw
+        T=/tmp/tw/trunk
+        [ -d /tmp/sch_cake ] || git clone --depth=1 https://github.com/TW641/sch_cake /tmp/sch_cake
+        PORT="/tmp/sch_cake/Padavan 3.4.113"
+        for h in sch_cake.c cobalt_compat.h pkt_sched.h; do
+          if [ -f "$PORT/$h" ]; then cp -f "$PORT/$h" $R/linux-3.4.x/net/sched/$h; fi
+        done
+
+        cat > /tmp/cake_compat_block.h <<'CEOF'
+        #include <linux/random.h>
+        #include <linux/mm.h>
+        #include <linux/slab.h>
+        #include <linux/vmalloc.h>
+        #include <linux/ip.h>
+        #include <linux/ipv6.h>
+        #include <linux/in.h>
+
+        #if KERNEL_VERSION(3, 8, 0) > LINUX_VERSION_CODE
+        #define prandom_u32() random32()
+        #endif
+
+        #if KERNEL_VERSION(3, 15, 0) > LINUX_VERSION_CODE
+        static inline void kvfree(const void *addr)
+        {
+            if (is_vmalloc_addr(addr)) vfree(addr);
+            else kfree(addr);
+        }
+        #endif
+
+        #if KERNEL_VERSION(3, 8, 0) > LINUX_VERSION_CODE
+        static inline bool cake_flow_dissect(const struct sk_buff *cskb, __be32 *src,
+                                             __be32 *dst, __be32 *ports, u8 *ip_proto)
+        {
+            struct sk_buff *skb = (struct sk_buff *)cskb;
+            int off;
+            u8 proto;
+            *src = 0; *dst = 0; *ports = 0; *ip_proto = 0;
+
+            if (skb->protocol == htons(ETH_P_IP)) {
+                const struct iphdr *iph;
+                if (!pskb_may_pull(skb, skb_network_offset(skb) + sizeof(*iph))) return false;
+                iph = ip_hdr(skb);
+                *src = iph->saddr; *dst = iph->daddr;
+                proto = iph->protocol;
+                off = skb_network_offset(skb) + iph->ihl * 4;
+                if (iph->frag_off & htons(IP_MF | IP_OFFSET)) proto = 0;
+            } else if (skb->protocol == htons(ETH_P_IPV6)) {
+                const struct ipv6hdr *ip6;
+                if (!pskb_may_pull(skb, skb_network_offset(skb) + sizeof(*ip6))) return false;
+                ip6 = ipv6_hdr(skb);
+                *src = ip6->saddr.s6_addr32[0] ^ ip6->saddr.s6_addr32[1] ^ ip6->saddr.s6_addr32[2] ^ ip6->saddr.s6_addr32[3];
+                *dst = ip6->daddr.s6_addr32[0] ^ ip6->daddr.s6_addr32[1] ^ ip6->daddr.s6_addr32[2] ^ ip6->daddr.s6_addr32[3];
+                proto = ip6->nexthdr;
+                off = skb_network_offset(skb) + sizeof(*ip6);
+            } else return false;
+
+            *ip_proto = proto;
+            switch (proto) {
+            case IPPROTO_TCP:
+            case IPPROTO_UDP:
+            case IPPROTO_UDPLITE:
+            case IPPROTO_SCTP:
+            case IPPROTO_DCCP:
+                if (pskb_may_pull(skb, off + 4)) *ports = *(__be32 *)(skb->data + off);
+                break;
+            }
+            return true;
+        }
+        #define skb_flow_dissect(skb, keys) \
+            cake_flow_dissect((skb), &(keys)->src, &(keys)->dst, &(keys)->ports, &(keys)->ip_proto)
+        #endif
+        CEOF
+
+        cat > /tmp/cake_hdr_patch.py <<'PEOF'
+        p = "/opt/rt-n56u/trunk/linux-3.4.x/net/sched/cobalt_compat.h"
+        s = open(p, encoding="utf-8", errors="surrogateescape").read()
+        if "cake_flow_dissect" not in s:
+            blk = open("/tmp/cake_compat_block.h", encoding="utf-8").read()
+            i = s.rindex("#endif")
+            s = s[:i] + blk + s[i:]
+            open(p, "w", encoding="utf-8", errors="surrogateescape").write(s)
+        PEOF
+        python3 /tmp/cake_hdr_patch.py
+
+        for f in $T/linux-3.4.x/net/sched/*; do
+          b=$(basename "$f")
+          if [ -f "$f" ] && [ ! -e "$R/linux-3.4.x/net/sched/$b" ]; then cp -f "$f" "$R/linux-3.4.x/net/sched/$b"; fi
+        done
+        grep -q TCA_CAKE_ $R/linux-3.4.x/include/linux/pkt_sched.h || cp -f $T/linux-3.4.x/include/linux/pkt_sched.h $R/linux-3.4.x/include/linux/pkt_sched.h
+
+        KC=$R/configs/boards/NEWIFI3/kernel-3.4.x.config
+        sed -i '/^CONFIG_NET_SCH_CAKE=/d; /CONFIG_NET_SCH_CAKE is not set/d' $KC
+        echo "CONFIG_NET_SCH_CAKE=y" >> $KC
+        for o in NET_SCHED NET_CLS NET_CLS_ACT NET_ACT_MIRRED NET_CLS_U32 NET_SCH_INGRESS IFB; do
+          sed -i "/^CONFIG_$o=/d; /^# CONFIG_$o is not set/d" $KC
+          echo "CONFIG_$o=y" >> $KC
+        done
+        sed -i "/^CONFIG_NET_SCH_FQ_CODEL=/d; /^# CONFIG_NET_SCH_FQ_CODEL is not set/d" $KC
+        echo "# CONFIG_NET_SCH_FQ_CODEL is not set" >> $KC
+
+        TCP=/opt/rt-n56u/toolchain-mipsel/toolchain-3.4.x/bin/mipsel-linux-uclibc-
+        cp -f $KC $R/linux-3.4.x/.config
+        yes "" | make -C $R/linux-3.4.x ARCH=mips CROSS_COMPILE=$TCP oldconfig > /dev/null 2>&1 || true
+        cp -f $R/linux-3.4.x/.config $KC
+
+        rm -rf $R/user/iproute2
+        cp -rf $T/user/iproute2 $R/user/iproute2
+
+        python3 - <<'PYEOF'
+        p = "/opt/rt-n56u/trunk/user/iproute2/iproute2-5.12.0/lib/fs.c"
+        s = open(p).read()
+        if "FS_COMPAT_UCLIBC" not in s:
+            compat = (
+                "\n/* FS_COMPAT_UCLIBC */\n"
+                "#include <sys/syscall.h>\n#include <unistd.h>\n#include <fcntl.h>\n"
+                "#ifndef __NR_name_to_handle_at\n#define __NR_name_to_handle_at 4339\n#endif\n"
+                "#ifndef __NR_open_by_handle_at\n#define __NR_open_by_handle_at 4340\n#endif\n"
+                "struct file_handle { unsigned int handle_bytes; int handle_type; unsigned char f_handle[]; };\n"
+                "static int name_to_handle_at(int d, const char *n, struct file_handle *h, int *m, int f)\n"
+                "{ return syscall(__NR_name_to_handle_at, d, n, h, m, f); }\n"
+                "static int open_by_handle_at(int m, struct file_handle *h, int f)\n"
+                "{ return syscall(__NR_open_by_handle_at, m, h, f); }\n\n"
+            )
+            i = s.rindex("#include")
+            s = s[:s.find("\n", i)+1] + compat + s[s.find("\n", i)+1:]
+            open(p, "w").write(s)
+        PYEOF
+
+        P=$(find "$GITHUB_WORKSPACE" -name patch_cake_backend.py -not -path '*/.git/*' | head -n1)
+        [ -n "$P" ] && python3 "$P" $R
+
+    - name: Download and Embed sing-box & AdGuardHome into ROM
+      run: |
+        set -e
+        R=/opt/rt-n56u/trunk
+        W=/tmp/embed; rm -rf $W; mkdir -p $W
+
+        sz() { stat -c %s "$1"; }
+        # tải có retry cả lỗi 56 (đứt kết nối), kiểm tra tar.gz không hỏng
+        dl() {   # $1=url  $2=file đích
+          for i in 1 2 3 4 5; do
+            if curl -Lksf --connect-timeout 20 --max-time 300 --retry 3 --retry-all-errors -o "$2" "$1" && tar -tzf "$2" >/dev/null 2>&1; then return 0; fi
+            echo "::warning::tải lỗi lần $i ($(basename "$2")), thử lại sau 5s..."; rm -f "$2"; sleep 5
+          done
+          echo "::error::không tải được $1"; return 1
+        }
+        # file ELF đầu tiên trong thư mục (bỏ qua README/LICENSE...)
+        pick_elf() { for f in $(find "$1" -type f); do if readelf -h "$f" >/dev/null 2>&1; then echo "$f"; return 0; fi; done; return 1; }
+        # phải là MIPS little-endian (mipsel), nếu sai thì dừng build
+        check_mipsel() {
+          H=$(readelf -h "$1" 2>/dev/null) || { echo "::error::$1 không phải file ELF"; return 1; }
+          if echo "$H" | grep -q 'little endian' && echo "$H" | grep -q 'MIPS'; then return 0; fi
+          echo "::error::$1 sai kiến trúc (cần MIPS little-endian)"; echo "$H" | grep -E 'Class|Data|Machine'; return 1
+        }
+        # chạy thử bằng qemu-user (chỉ cảnh báo, vì qemu đôi khi không chịu nổi runtime Go)
+        qemu_try() {
+          if timeout 90 qemu-mipsel-static "$1" "$2" >/dev/null 2>&1; then echo "qemu: $(basename "$1") chạy được"
+          else echo "::warning::qemu không chạy được $(basename "$1") $2 (có thể do qemu, vẫn cần thử trên router)"; fi
+        }
+        # chép binary vào thư mục của script tương ứng và nhân dòng cài đặt của Makefile đang cài script đó
+        install_bin() {   # $1=tên script  $2=tên binary mới  $3=đường dẫn file
+          SCR=$(find $R/user -name "$1" -not -path "*/romfs/*" | head -n1)
+          [ -n "$SCR" ] || { echo "::error::không thấy $1 trong source"; exit 1; }
+          D=$(dirname "$SCR")
+          cp -f "$3" "$D/$2"; chmod 755 "$D/$2"
+          MK=""; d="$D"
+          while [ "$d" != "$R/user" ] && [ "$d" != "/" ]; do
+            if [ -f "$d/Makefile" ] && grep -q "$1" "$d/Makefile"; then MK="$d/Makefile"; break; fi
+            d=$(dirname "$d")
+          done
+          [ -n "$MK" ] || MK=$(grep -rl --include=Makefile "$1" $R/user 2>/dev/null | head -n1)
+          [ -n "$MK" ] || { echo "::error::không thấy Makefile nào cài $1"; exit 1; }
+          echo "Makefile cài $1: $MK"
+          grep -q "$2" "$MK" || sed -i "/$1/{p;s/$1/$2/g}" "$MK"
+          grep -q "$2" "$MK" || { echo "::error::không thêm được dòng cài $2 vào $MK"; exit 1; }
+          grep -n "$2" "$MK"
+        }
+
+        echo "=== 1. sing-box lite ==="
+        SB_URL="https://github.com/MANCrimSon/sing-box-extended-lite/releases/download/v1.14.3-extended-2.7.3/sing-box-extended-lite-1.14.3-extended-2.7.3-linux-mipsle-softfloat-compressed.tar.gz"
+        dl "$SB_URL" $W/sb.tar.gz
+        tar -tzf $W/sb.tar.gz
+        mkdir -p $W/sb; tar -xzf $W/sb.tar.gz -C $W/sb
+        SB_BIN=$(pick_elf $W/sb) || { echo "::error::không thấy file ELF sing-box trong gói tải"; exit 1; }
+        check_mipsel "$SB_BIN"
+        SB_ORIG=$(sz "$SB_BIN")
+        if upx -t "$SB_BIN" >/dev/null 2>&1; then
+          echo "sing-box đã nén UPX sẵn ($SB_ORIG byte). Thử nén lại bằng LZMA để nhỏ hơn..."
+          if upx -d -q -o $W/sb.raw "$SB_BIN" >/dev/null 2>&1 && upx --lzma --best -q -o $W/sb.lzma $W/sb.raw >/dev/null 2>&1 && [ "$(sz $W/sb.lzma)" -lt "$SB_ORIG" ]; then
+            SB_BIN=$W/sb.lzma; echo "dùng bản LZMA: $(sz "$SB_BIN") byte"
+          else
+            echo "giữ nguyên bản UPX của gói"
+          fi
+        else
+          upx --lzma --best -q "$SB_BIN" || echo "::warning::UPX sing-box lỗi, giữ bản chưa nén (squashfs xz vẫn nén được)"
+        fi
+        check_mipsel "$SB_BIN"
+        qemu_try "$SB_BIN" version
+        install_bin singbox.sh sing-box "$SB_BIN"
+
+        echo "=== 2. AdGuardHome ==="
+        AGH_URL="https://github.com/AdguardTeam/AdGuardHome/releases/latest/download/AdGuardHome_linux_mipsle_softfloat.tar.gz"
+        dl "$AGH_URL" $W/agh.tar.gz
+        mkdir -p $W/agh; tar -xzf $W/agh.tar.gz -C $W/agh
+        AGH_BIN=$(find $W/agh -type f -name AdGuardHome | head -n1)
+        [ -n "$AGH_BIN" ] || { echo "::error::không thấy AdGuardHome trong gói tải"; exit 1; }
+        check_mipsel "$AGH_BIN"
+        AGH_ORIG=$(sz "$AGH_BIN")
+        upx --lzma --best -q "$AGH_BIN" || echo "::warning::UPX AdGuardHome lỗi, giữ bản chưa nén"
+        check_mipsel "$AGH_BIN"
+        qemu_try "$AGH_BIN" --version
+        install_bin adguardhome.sh AdGuardHome "$AGH_BIN"
+
+        echo "=== Dung lượng binary nhúng vào ROM ==="
+        echo "sing-box   : $(sz "$SB_BIN") byte (gói gốc $SB_ORIG)"
+        echo "AdGuardHome: $(sz "$AGH_BIN") byte (gốc $AGH_ORIG)"
+        echo "Tổng       : $(( $(sz "$SB_BIN") + $(sz "$AGH_BIN") )) byte"
+
+    - name: Build Firmware
+      env:
+        TNAME: NEWIFI3
+        KERNEL: 3.4
+      run: |
+        cd /opt/rt-n56u/trunk
+        cp -f configs/templates/$TNAME.config .config
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' .config
+        
+        ######################################################################
+        ### TỐI ƯU CẤU HÌNH .CONFIG ĐỂ KHÔNG TRÀN FLASH 32MB ###
+        ######################################################################
+        echo "CONFIG_FIRMWARE_CPU_900MHZ=n" >> .config
+        echo "CONFIG_FIRMWARE_CPU_SLEEP=n" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_IPV6=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_USB=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_FAT=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_EXFAT=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_EXT2=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_EXT3=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_EXT4=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_FUSE=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_SWAP=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_SERIAL=y" >> .config
+        
+        # Bật module phục vụ CAKE & sing-box TProxy
+        echo "CONFIG_FIRMWARE_INCLUDE_QOS=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_IMQ=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_IFB=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_IPSET=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_TUNSAFE=y" >> .config
+        
+        # Tắt các dịch vụ nặng không dùng để tiết kiệm Flash
+        echo "CONFIG_FIRMWARE_INCLUDE_CADDY=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_FFMPEG_NEW=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_TAILSCALE=n" >> .config  # Dùng Tailscale trong sing-box
+        echo "CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_ARIA=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_MINIDLNA=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_FIREFLY=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_XUPNPD=n" >> .config
+        
+        # Tiện ích mạng cần thiết
+        echo "CONFIG_FIRMWARE_INCLUDE_CURL=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_OPENSSH=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_HTOP=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_NANO=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_IPERF3=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_TTYD=y" >> .config
+        
+        # Bật cờ WebUI cho CAKE, sing-box và AdGuardHome
+        echo "CONFIG_FIRMWARE_INCLUDE_SINGBOX=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_ADGUARDHOME=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_CAKE=y" >> .config
+        
+        ######################################################################
+        sudo ./clear_tree
+        sudo ./build_firmware_modify $TNAME 0
+        sudo mv -f images/*.trx /opt/images/
+        
+        ##### KIỂM TRA ROM CÓ VỪA PHÂN VÙNG FLASH KHÔNG (đọc kích thước từ kernel config, không gõ cứng)
+        KC=/opt/rt-n56u/trunk/configs/boards/NEWIFI3/kernel-3.4.x.config
+        cfg() { v=$(grep -E "^CONFIG_$1=" "$KC" | head -n1 | cut -d= -f2); echo $((${v:-0})); }
+        FLASH=$((32 * 1024 * 1024))
+        STORE=$(cfg MTD_STORE_PART_SIZ)
+        HEAD=$(( $(cfg MTD_BOOT_PART_SIZ) + $(cfg MTD_CONFIG_PART_SIZ) + $(cfg MTD_FACTORY_PART_SIZ) ))
+        [ "$HEAD" -gt 0 ] || HEAD=$((0x50000))
+        [ "$STORE" -gt 0 ] || STORE=$((0x200000))
+        FWMAX=$((FLASH - HEAD - STORE))
+        echo "Bố cục flash: đầu(boot+config+factory)=$HEAD  storage=$STORE  firmware tối đa=$FWMAX byte"
+        echo "::notice::Đổi kích thước Storage làm đổi phân vùng Firmware. Lần flash đầu nên dùng bootloader (Breed/U-Boot), cấu hình cũ sẽ bị reset."
+
+        for f in /opt/images/*.trx; do
+          SZ=$(stat -c %s "$f")
+          echo "=========================================================="
+          echo "Firmware $(basename "$f"): $SZ / $FWMAX byte ($((SZ * 100 / FWMAX))%)"
+          echo "Còn trống: $((FWMAX - SZ)) byte"
+          echo "=========================================================="
+          if [ "$SZ" -gt "$FWMAX" ]; then
+            echo "::error::Firmware lớn hơn phân vùng Flash ($SZ > $FWMAX). HỦY BUILD!"
+            exit 1
+          fi
+        done
+
+        echo "=== Top 25 file lớn nhất trong romfs (gốc -> xz) ==="
+        if [ -d romfs ]; then
+          find romfs -type f -size +200k -printf '%s %p\n' | sort -nr | head -n 25 | while read s p; do
+            z=$(xz -6 -T0 -c "$p" | wc -c)
+            printf '%9d -> %9d  %s\n' "$s" "$z" "$p"
+          done
+        fi
+
+        cp -f .config /opt/images/${TNAME}.config
+        echo "build_time=$(date '+%Y年%m月%d日%H:%M:%S' | jq -sRr @uri)" >> $GITHUB_ENV
+        echo "tag=$(date '+%Y-%m-%d')" >> $GITHUB_ENV
+
+    - name: Upload packages
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: NEWIFI3
+        path: /opt/images
+
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        body: |
+           > ### Firmware Newifi 3 D2 tích hợp sẵn CAKE SQM, sing-box & AdGuardHome
+           > Lưu ý: bản này đổi bố cục phân vùng (Storage nhỏ lại). Lần flash đầu hãy dùng bootloader (Breed/U-Boot); cấu hình cũ sẽ bị reset.
+        tag_name: ${{ env.tag }}
+        files: /opt/images/*
