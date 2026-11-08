@@ -234,7 +234,7 @@ jobs:
         # Tắt các dịch vụ nặng không dùng để tiết kiệm Flash
         echo "CONFIG_FIRMWARE_INCLUDE_CADDY=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_FFMPEG_NEW=n" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_TAILSCALE=n" >> .config  # Dùng Tailscale trong sing-box
+        echo "CONFIG_FIRMWARE_INCLUDE_TAILSCALE=y" >> .config  # Dùng Tailscale trong sing-box
         echo "CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_ARIA=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_MINIDLNA=n" >> .config
@@ -254,7 +254,6 @@ jobs:
         # Tắt các mục không cần (xoá dòng cũ rồi ghi =n để không bị trùng khoá trong .config)
         for k in \
           ENABLE_UFSD \
-          INCLUDE_SMBD INCLUDE_SMBD36 INCLUDE_FTPD \
           INCLUDE_TCPDUMP INCLUDE_AUDIO INCLUDE_UVC INCLUDE_LPRD INCLUDE_U2EC \
           INCLUDE_HDPARM INCLUDE_PARTED INCLUDE_OPENVPN INCLUDE_OPENSSL_EXE \
           INCLUDE_TTYD INCLUDE_IPERF3 INCLUDE_HTOP INCLUDE_NANO \
@@ -262,7 +261,7 @@ jobs:
           sed -i "/^CONFIG_FIRMWARE_${k}=/d; /^# CONFIG_FIRMWARE_${k} is not set/d" .config
           echo "CONFIG_FIRMWARE_${k}=n" >> .config
         done
-        grep -E 'CONFIG_FIRMWARE_(ENABLE_UFSD|INCLUDE_(SMBD|FTPD|TCPDUMP|AUDIO|UVC|OPENVPN|TTYD|IMQ|TUNSAFE|LANG_CN))' .config
+        grep -E 'CONFIG_FIRMWARE_(ENABLE_UFSD|INCLUDE_(FTPD|TCPDUMP|AUDIO|UVC|OPENVPN|TTYD|IMQ|TUNSAFE|LANG_CN))' .config
         
         ######################################################################
         sudo ./clear_tree
