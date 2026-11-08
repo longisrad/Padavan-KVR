@@ -211,9 +211,9 @@ jobs:
         set -e
         R=/opt/rt-n56u/trunk
         W=/tmp/embed; rm -rf $W; mkdir -p $W
-        REPO=shtorm-7/sing-box-extended
-        ASSET=linux-mipsle-softfloat
-
+        REPO=MANCrimSon/sing-box-extended-lite
+        ASSET=linux-mipsle-softfloat-compressed
+        
         sz() { stat -c %s "$1"; }
         # file ELF đầu tiên trong thư mục (bỏ qua README/LICENSE...)
         pick_elf() { for f in $(find "$1" -type f); do if readelf -h "$f" >/dev/null 2>&1; then echo "$f"; return 0; fi; done; return 1; }
