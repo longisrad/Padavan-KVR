@@ -43,10 +43,10 @@ LOG_CLEAR_MARKER="/tmp/.singbox_log_clear_ts"
 CRON_FILE="/etc/storage/cron/crontabs/$(nvram get http_username 2>/dev/null)"
 [ -z "$CRON_FILE" ] || [ ! -f "$CRON_FILE" ] && CRON_FILE="/etc/storage/cron/crontabs/admin"
 
-REPO="shtorm-7/sing-box-extended"
+REPO="MANCrimSon/sing-box-extended-lite"
 GH_API="https://api.github.com/repos/${REPO}/releases/latest"
 JQ_BIN="/usr/bin/jq"
-ASSET_NAME="linux-mipsle-softfloat"
+ASSET_NAME="linux-mipsle-softfloat-compressed"
 
 log() { logger -t "$LOG_TAG" "$1"; }
 is_running() { [ -n "$(pidof sing-box)" ]; }
