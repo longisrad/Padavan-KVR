@@ -239,6 +239,7 @@ jobs:
         # Bật module phục vụ CAKE & sing-box TProxy
         echo "CONFIG_FIRMWARE_INCLUDE_IFB=y" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_IPSET=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_QOS=y" >> .config
         
         # Tắt các dịch vụ nặng không dùng để tiết kiệm Flash
         echo "CONFIG_FIRMWARE_INCLUDE_CADDY=n" >> .config
@@ -266,11 +267,11 @@ jobs:
           INCLUDE_TCPDUMP INCLUDE_AUDIO INCLUDE_UVC INCLUDE_LPRD INCLUDE_U2EC \
           INCLUDE_HDPARM INCLUDE_PARTED INCLUDE_OPENVPN INCLUDE_OPENSSL_EXE \
           INCLUDE_TTYD INCLUDE_IPERF3 INCLUDE_HTOP INCLUDE_NANO \
-          INCLUDE_TUNSAFE INCLUDE_IMQ INCLUDE_QOS INCLUDE_LANG_CN; do
+          INCLUDE_TUNSAFE INCLUDE_IMQ INCLUDE_LANG_CN; do
           sed -i "/^CONFIG_FIRMWARE_${k}=/d; /^# CONFIG_FIRMWARE_${k} is not set/d" .config
           echo "CONFIG_FIRMWARE_${k}=n" >> .config
         done
-        grep -E 'CONFIG_FIRMWARE_(ENABLE_UFSD|INCLUDE_(FTPD|TCPDUMP|AUDIO|UVC|OPENVPN|TTYD|IMQ|QOS|TUNSAFE|LANG_CN))' .config
+        grep -E 'CONFIG_FIRMWARE_(ENABLE_UFSD|INCLUDE_(FTPD|TCPDUMP|AUDIO|UVC|OPENVPN|TTYD|IMQ|TUNSAFE|LANG_CN))' .config
         
         ######################################################################
         sudo ./clear_tree
