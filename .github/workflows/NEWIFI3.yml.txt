@@ -164,17 +164,22 @@ jobs:
         KC=$R/configs/boards/NEWIFI3/kernel-3.4.x.config
         sed -i '/^CONFIG_NET_SCH_CAKE=/d; /CONFIG_NET_SCH_CAKE is not set/d' $KC
         echo "CONFIG_NET_SCH_CAKE=y" >> $KC
-        for o in NET_SCHED NET_CLS NET_CLS_ACT NET_ACT_MIRRED NET_CLS_U32 NET_SCH_INGRESS IFB; do
+        for o in NET_SCHED NET_CLS NET_CLS_ACT NET_ACT_MIRRED NET_CLS_U32 NET_SCH_INGRESS IFB NET_SCH_FQ_CODEL \
+                 NETFILTER_XT_TARGET_DSCP NETFILTER_XT_MATCH_LENGTH NETFILTER_XT_MATCH_MULTIPORT IP_NF_MANGLE IP6_NF_MANGLE; do
           sed -i "/^CONFIG_$o=/d; /^# CONFIG_$o is not set/d" $KC
           echo "CONFIG_$o=y" >> $KC
         done
-        sed -i "/^CONFIG_NET_SCH_FQ_CODEL=/d; /^# CONFIG_NET_SCH_FQ_CODEL is not set/d" $KC
-        echo "# CONFIG_NET_SCH_FQ_CODEL is not set" >> $KC
 
         TCP=/opt/rt-n56u/toolchain-mipsel/toolchain-3.4.x/bin/mipsel-linux-uclibc-
         cp -f $KC $R/linux-3.4.x/.config
         yes "" | make -C $R/linux-3.4.x ARCH=mips CROSS_COMPILE=$TCP oldconfig > /dev/null 2>&1 || true
         cp -f $R/linux-3.4.x/.config $KC
+        for o in NET_SCH_CAKE NET_SCH_INGRESS IFB NET_ACT_MIRRED NET_CLS_U32; do
+          grep -q "^CONFIG_$o=[ym]" $KC || { echo "::error::CONFIG_$o bị oldconfig loại bỏ"; exit 1; }
+        done
+        for o in NETFILTER_XT_TARGET_DSCP NETFILTER_XT_MATCH_LENGTH NETFILTER_XT_MATCH_MULTIPORT IP_NF_MANGLE; do
+          grep -q "^CONFIG_$o=[ym]" $KC || echo "::warning::thiếu CONFIG_$o -> DSCP tự động sẽ không chạy"
+        done
 
         rm -rf $R/user/iproute2
         cp -rf $T/user/iproute2 $R/user/iproute2
