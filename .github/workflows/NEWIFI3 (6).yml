@@ -1,0 +1,611 @@
+# Build Padavan cho Newifi 3 D2 (sing-box-extended tự build từ mã nguồn, tối giản tag, nhúng vào ROM; AdGuardHome tải vào RAM khi bật)
+name: 新三NEWIFI3
+
+on: 
+  workflow_dispatch:
+    inputs:
+      sb_tag:
+        description: 'Tag sing-box-extended (để trống = release mới nhất, giống singbox.sh)'
+        required: false
+        default: ''
+      sb_extra_tags:
+        description: 'Build tag bổ sung, ví dụ with_wireguard,with_dhcp (để trống = tối giản)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+env:
+  TZ: Asia/Shanghai
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot \
+        cpio git python3-docutils gettext automake autopoint texinfo build-essential help2man \
+        pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget file qemu-user-static
+
+    - name: Install UPX
+      uses: crazy-max/ghaction-upx@v3
+      with:
+        version: v4.2.4
+        install-only: true
+
+    - name: Clone source code
+      env:
+        KERNEL: 3.4
+      run: |
+        git clone --depth=1 https://github.com/${GITHUB_REPOSITORY}.git /opt/rt-n56u
+        cd /opt/rt-n56u/toolchain-mipsel
+        sh dl_toolchain.sh
+        mkdir -p /opt/images/
+        
+        ##### CẤU HÌNH PHÂN VÙNG BỘ NHỚ (Storage 8MB, ROM tối đa ~23.7MB)
+        sed -i 's/^CONFIG_MTD_STORE_PART_SIZ=.*/CONFIG_MTD_STORE_PART_SIZ=0x800000/' /opt/rt-n56u/trunk/configs/boards/NEWIFI3/kernel-3.4.x.config
+        sed -i 's/size_etc="[0-9]*M"/size_etc="8M"/g' /opt/rt-n56u/trunk/user/scripts/dev_init.sh
+        # Chỉ đổi dòng khai báo mặc định ở đầu file. Mẫu cũ 'mtd_part_size=[0-9]*' khớp cả dòng
+        # mtd_part_size=`echo $((0x$mtd_hex))` và làm nó thành 8388608`echo ...` -> save storage luôn lỗi
+        sed -i 's/^mtd_part_size=[0-9][0-9]*[[:space:]]*$/mtd_part_size=8388608/' /opt/rt-n56u/trunk/user/scripts/mtd_storage.sh
+        if grep -q 'mtd_part_size=[0-9][0-9]*`' /opt/rt-n56u/trunk/user/scripts/mtd_storage.sh; then
+          echo "::error::mtd_storage.sh bị sed làm hỏng dòng đọc mtd_part_size"; exit 1
+        fi
+
+        ##### WIFI: 5GHz mặc định US -> CN
+        sed -i 's/\(DEF_WLAN_5G_CC[[:space:]]*\)"US"/\1"CN"/' /opt/rt-n56u/trunk/user/shared/defaults.h
+
+    - name: Fix dosfstools timestamps + add CAKE (sch_cake, iproute2 5.12.0)
+      run: |
+        set -e
+        R=/opt/rt-n56u/trunk
+
+        ##### /tmp = 200M cho RAM 512MB
+        sed -i 's/size_tmp="[0-9]*M"/size_tmp="200M"/' $R/user/scripts/dev_init.sh
+        grep -n 'size_tmp' $R/user/scripts/dev_init.sh
+
+        ##### Fix dosfstools
+        D=$R/user/dosfstools/dosfstools-4.2
+        if [ -d "$D" ]; then
+          touch $D/aclocal.m4; sleep 1
+          touch $D/configure $D/config.h.in 2>/dev/null || true; sleep 1
+          find $D -name Makefile.in -exec touch {} +
+        fi
+
+        ##### CAKE: mượn sch_cake.c + iproute2 5.12.0
+        git clone --depth=1 https://github.com/TW641/padavan-ng /tmp/tw
+        T=/tmp/tw/trunk
+        [ -d /tmp/sch_cake ] || git clone --depth=1 https://github.com/TW641/sch_cake /tmp/sch_cake
+        PORT="/tmp/sch_cake/Padavan 3.4.113"
+        for h in sch_cake.c cobalt_compat.h pkt_sched.h; do
+          if [ -f "$PORT/$h" ]; then cp -f "$PORT/$h" $R/linux-3.4.x/net/sched/$h; fi
+        done
+
+        cat > /tmp/cake_compat_block.h <<'CEOF'
+        #include <linux/random.h>
+        #include <linux/mm.h>
+        #include <linux/slab.h>
+        #include <linux/vmalloc.h>
+        #include <linux/ip.h>
+        #include <linux/ipv6.h>
+        #include <linux/in.h>
+
+        #if KERNEL_VERSION(3, 8, 0) > LINUX_VERSION_CODE
+        #define prandom_u32() random32()
+        #endif
+
+        #if KERNEL_VERSION(3, 15, 0) > LINUX_VERSION_CODE
+        static inline void kvfree(const void *addr)
+        {
+            if (is_vmalloc_addr(addr)) vfree(addr);
+            else kfree(addr);
+        }
+        #endif
+
+        #if KERNEL_VERSION(3, 8, 0) > LINUX_VERSION_CODE
+        static inline bool cake_flow_dissect(const struct sk_buff *cskb, __be32 *src,
+                                             __be32 *dst, __be32 *ports, u8 *ip_proto)
+        {
+            struct sk_buff *skb = (struct sk_buff *)cskb;
+            int off;
+            u8 proto;
+            *src = 0; *dst = 0; *ports = 0; *ip_proto = 0;
+
+            if (skb->protocol == htons(ETH_P_IP)) {
+                const struct iphdr *iph;
+                if (!pskb_may_pull(skb, skb_network_offset(skb) + sizeof(*iph))) return false;
+                iph = ip_hdr(skb);
+                *src = iph->saddr; *dst = iph->daddr;
+                proto = iph->protocol;
+                off = skb_network_offset(skb) + iph->ihl * 4;
+                if (iph->frag_off & htons(IP_MF | IP_OFFSET)) proto = 0;
+            } else if (skb->protocol == htons(ETH_P_IPV6)) {
+                const struct ipv6hdr *ip6;
+                if (!pskb_may_pull(skb, skb_network_offset(skb) + sizeof(*ip6))) return false;
+                ip6 = ipv6_hdr(skb);
+                *src = ip6->saddr.s6_addr32[0] ^ ip6->saddr.s6_addr32[1] ^ ip6->saddr.s6_addr32[2] ^ ip6->saddr.s6_addr32[3];
+                *dst = ip6->daddr.s6_addr32[0] ^ ip6->daddr.s6_addr32[1] ^ ip6->daddr.s6_addr32[2] ^ ip6->daddr.s6_addr32[3];
+                proto = ip6->nexthdr;
+                off = skb_network_offset(skb) + sizeof(*ip6);
+            } else return false;
+
+            *ip_proto = proto;
+            switch (proto) {
+            case IPPROTO_TCP:
+            case IPPROTO_UDP:
+            case IPPROTO_UDPLITE:
+            case IPPROTO_SCTP:
+            case IPPROTO_DCCP:
+                if (pskb_may_pull(skb, off + 4)) *ports = *(__be32 *)(skb->data + off);
+                break;
+            }
+            return true;
+        }
+        #define skb_flow_dissect(skb, keys) \
+            cake_flow_dissect((skb), &(keys)->src, &(keys)->dst, &(keys)->ports, &(keys)->ip_proto)
+        #endif
+        CEOF
+
+        cat > /tmp/cake_hdr_patch.py <<'PEOF'
+        p = "/opt/rt-n56u/trunk/linux-3.4.x/net/sched/cobalt_compat.h"
+        s = open(p, encoding="utf-8", errors="surrogateescape").read()
+        if "cake_flow_dissect" not in s:
+            blk = open("/tmp/cake_compat_block.h", encoding="utf-8").read()
+            i = s.rindex("#endif")
+            s = s[:i] + blk + s[i:]
+            open(p, "w", encoding="utf-8", errors="surrogateescape").write(s)
+        PEOF
+        python3 /tmp/cake_hdr_patch.py
+
+        for f in $T/linux-3.4.x/net/sched/*; do
+          b=$(basename "$f")
+          if [ -f "$f" ] && [ ! -e "$R/linux-3.4.x/net/sched/$b" ]; then cp -f "$f" "$R/linux-3.4.x/net/sched/$b"; fi
+        done
+        grep -q TCA_CAKE_ $R/linux-3.4.x/include/linux/pkt_sched.h || cp -f $T/linux-3.4.x/include/linux/pkt_sched.h $R/linux-3.4.x/include/linux/pkt_sched.h
+
+        ##### fq_codel (dự phòng khi CAKE tắt): kernel 3.4 thiếu skb_flow_dissect -> dùng lại bản tự viết như CAKE
+        ENABLE_FQ_CODEL=1   # đặt 0 nếu sch_fq_codel.c vẫn lỗi biên dịch
+        cat > /tmp/fqc_patch.py <<'PEOF'
+        import sys
+        p = sys.argv[1]
+        s = open(p, encoding="utf-8", errors="surrogateescape").read()
+        if "fqc_flow_dissect" not in s:
+            blk = r'''
+        #ifndef skb_flow_dissect
+        #include <linux/version.h>
+        #include <linux/skbuff.h>
+        #include <linux/ip.h>
+        #include <linux/ipv6.h>
+        #include <linux/in.h>
+        #include <linux/if_ether.h>
+        #include <net/ip.h>
+        static inline bool fqc_flow_dissect(const struct sk_buff *cskb, __be32 *src,
+                                            __be32 *dst, __be32 *ports, u8 *ip_proto)
+        {
+            struct sk_buff *skb = (struct sk_buff *)cskb;
+            int off;
+            u8 proto;
+            *src = 0; *dst = 0; *ports = 0; *ip_proto = 0;
+            if (skb->protocol == htons(ETH_P_IP)) {
+                const struct iphdr *iph;
+                if (!pskb_may_pull(skb, skb_network_offset(skb) + sizeof(*iph))) return false;
+                iph = ip_hdr(skb);
+                *src = iph->saddr; *dst = iph->daddr;
+                proto = iph->protocol;
+                off = skb_network_offset(skb) + iph->ihl * 4;
+                if (iph->frag_off & htons(IP_MF | IP_OFFSET)) proto = 0;
+            } else if (skb->protocol == htons(ETH_P_IPV6)) {
+                const struct ipv6hdr *ip6;
+                if (!pskb_may_pull(skb, skb_network_offset(skb) + sizeof(*ip6))) return false;
+                ip6 = ipv6_hdr(skb);
+                *src = ip6->saddr.s6_addr32[0] ^ ip6->saddr.s6_addr32[1] ^ ip6->saddr.s6_addr32[2] ^ ip6->saddr.s6_addr32[3];
+                *dst = ip6->daddr.s6_addr32[0] ^ ip6->daddr.s6_addr32[1] ^ ip6->daddr.s6_addr32[2] ^ ip6->daddr.s6_addr32[3];
+                proto = ip6->nexthdr;
+                off = skb_network_offset(skb) + sizeof(*ip6);
+            } else return false;
+            *ip_proto = proto;
+            switch (proto) {
+            case IPPROTO_TCP:
+            case IPPROTO_UDP:
+            case IPPROTO_UDPLITE:
+            case IPPROTO_SCTP:
+            case IPPROTO_DCCP:
+                if (pskb_may_pull(skb, off + 4)) *ports = *(__be32 *)(skb->data + off);
+                break;
+            }
+            return true;
+        }
+        #define skb_flow_dissect(skb, keys) \
+            fqc_flow_dissect((skb), &(keys)->src, &(keys)->dst, &(keys)->ports, &(keys)->ip_proto)
+        #endif
+        '''
+            i = s.rindex("\n#include")
+            j = s.find("\n", i + 1)
+            s = s[:j+1] + blk + s[j+1:]
+            open(p, "w", encoding="utf-8", errors="surrogateescape").write(s)
+            print("da va sch_fq_codel.c")
+        PEOF
+        NS=$R/linux-3.4.x/net/sched
+        [ "$ENABLE_FQ_CODEL" = "1" ] && python3 /tmp/fqc_patch.py $NS/sch_fq_codel.c
+        ##### sfq: sch_sfq.c cũng gọi skb_flow_dissect (kernel 3.4 không có) -> vá cùng kiểu
+        if grep -q skb_flow_dissect $NS/sch_sfq.c; then python3 /tmp/fqc_patch.py $NS/sch_sfq.c; fi
+
+        KC=$R/configs/boards/NEWIFI3/kernel-3.4.x.config
+        sed -i '/^CONFIG_NET_SCH_CAKE=/d; /CONFIG_NET_SCH_CAKE is not set/d' $KC
+        echo "CONFIG_NET_SCH_CAKE=y" >> $KC
+        for o in NET_SCHED NET_CLS NET_CLS_ACT NET_ACT_MIRRED NET_CLS_U32 NET_SCH_INGRESS IFB NET_SCH_SFQ NET_SCH_HTB \
+                 NETFILTER_XT_TARGET_DSCP NETFILTER_XT_MATCH_LENGTH NETFILTER_XT_MATCH_MULTIPORT IP_NF_MANGLE IP6_NF_MANGLE; do
+          sed -i "/^CONFIG_$o=/d; /^# CONFIG_$o is not set/d" $KC
+          echo "CONFIG_$o=y" >> $KC
+        done
+        sed -i "/^CONFIG_NET_SCH_FQ_CODEL=/d; /^# CONFIG_NET_SCH_FQ_CODEL is not set/d" $KC
+        if [ "$ENABLE_FQ_CODEL" = "1" ]; then echo "CONFIG_NET_SCH_FQ_CODEL=y" >> $KC; else echo "# CONFIG_NET_SCH_FQ_CODEL is not set" >> $KC; fi
+
+        TCP=/opt/rt-n56u/toolchain-mipsel/toolchain-3.4.x/bin/mipsel-linux-uclibc-
+        cp -f $KC $R/linux-3.4.x/.config
+        yes "" | make -C $R/linux-3.4.x ARCH=mips CROSS_COMPILE=$TCP oldconfig > /dev/null 2>&1 || true
+        cp -f $R/linux-3.4.x/.config $KC
+        for o in NET_SCH_CAKE NET_SCH_FQ_CODEL NET_SCH_SFQ NET_SCH_HTB NET_SCH_INGRESS IFB NET_ACT_MIRRED NET_CLS_U32 NETFILTER_XT_TARGET_DSCP NETFILTER_XT_MATCH_LENGTH NETFILTER_XT_MATCH_MULTIPORT IP_NF_MANGLE; do
+          grep -q "^CONFIG_$o=[ym]" $KC || echo "::warning::CONFIG_$o không có trong kernel .config sau oldconfig"
+        done
+
+        rm -rf $R/user/iproute2
+        cp -rf $T/user/iproute2 $R/user/iproute2
+
+        ##### tc/iproute2 luôn nằm trong ROM dù INCLUDE_QOS=n (gói này chỉ phục vụ ip/tc)
+        grep -rl 'CONFIG_FIRMWARE_INCLUDE_QOS' $R/user/iproute2 2>/dev/null | xargs -r sed -i 's/\$(CONFIG_FIRMWARE_INCLUDE_QOS)/y/g'
+        sed -i '/iproute2/ s/\$(CONFIG_FIRMWARE_INCLUDE_QOS)/y/' $R/user/Makefile
+        grep -n 'iproute2' $R/user/Makefile || true
+
+        ##### Chốt chặn: build_firmware_modify không được tắt các tùy chọn kernel CAKE cần khi INCLUDE_CAKE=y
+        python3 - <<'PYEOF'
+        import re
+        p = "/opt/rt-n56u/trunk/build_firmware_modify"
+        s = open(p, encoding="utf-8", errors="surrogateescape").read()
+        if "CAKE_KEEP" not in s:
+            m = re.search(r'^func_disable_kernel_param\(\)[ \t]*\n?[ \t]*\{[ \t]*\n', s, re.M)
+            if not m:
+                print("::warning::khong thay func_disable_kernel_param trong build_firmware_modify, bo qua chot chan CAKE")
+            else:
+                keep = ("CONFIG_NET_SCHED|CONFIG_NET_CLS|CONFIG_NET_CLS_ACT|CONFIG_NET_ACT_MIRRED|"
+                        "CONFIG_NET_CLS_U32|CONFIG_NET_SCH_INGRESS|CONFIG_IFB|CONFIG_NET_SCH_SFQ|CONFIG_NET_SCH_HTB|CONFIG_NET_SCH_FQ_CODEL|CONFIG_NET_SCH_CAKE|"
+                        "CONFIG_NETFILTER_XT_TARGET_DSCP|CONFIG_NETFILTER_XT_MATCH_LENGTH|"
+                        "CONFIG_NETFILTER_XT_MATCH_MULTIPORT|CONFIG_IP_NF_MANGLE|CONFIG_IP6_NF_MANGLE")
+                guard = ('# CAKE_KEEP: giu cac tuy chon kernel CAKE can du INCLUDE_QOS=n\n'
+                         'if [ "$CONFIG_FIRMWARE_INCLUDE_CAKE" = "y" ]; then\n'
+                         '  case "$1" in\n'
+                         '    ' + keep + ') return 0 ;;\n'
+                         '  esac\n'
+                         'fi\n')
+                s = s[:m.end()] + guard + s[m.end():]
+                open(p, "w", encoding="utf-8", errors="surrogateescape").write(s)
+                print("da them chot chan CAKE vao func_disable_kernel_param")
+        PYEOF
+
+        python3 - <<'PYEOF'
+        p = "/opt/rt-n56u/trunk/user/iproute2/iproute2-5.12.0/lib/fs.c"
+        s = open(p).read()
+        if "FS_COMPAT_UCLIBC" not in s:
+            compat = (
+                "\n/* FS_COMPAT_UCLIBC */\n"
+                "#include <sys/syscall.h>\n#include <unistd.h>\n#include <fcntl.h>\n"
+                "#ifndef __NR_name_to_handle_at\n#define __NR_name_to_handle_at 4339\n#endif\n"
+                "#ifndef __NR_open_by_handle_at\n#define __NR_open_by_handle_at 4340\n#endif\n"
+                "struct file_handle { unsigned int handle_bytes; int handle_type; unsigned char f_handle[]; };\n"
+                "static int name_to_handle_at(int d, const char *n, struct file_handle *h, int *m, int f)\n"
+                "{ return syscall(__NR_name_to_handle_at, d, n, h, m, f); }\n"
+                "static int open_by_handle_at(int m, struct file_handle *h, int f)\n"
+                "{ return syscall(__NR_open_by_handle_at, m, h, f); }\n\n"
+            )
+            i = s.rindex("#include")
+            s = s[:s.find("\n", i)+1] + compat + s[s.find("\n", i)+1:]
+            open(p, "w").write(s)
+        PYEOF
+
+        P=$(find "$GITHUB_WORKSPACE" -name patch_cake_backend.py -not -path '*/.git/*' | head -n1)
+        [ -n "$P" ] && python3 "$P" $R
+
+    ##### sing-box-extended: build từ mã nguồn, cùng repo/bản release với singbox.sh, chỉ bật tính năng singbox.sh cần
+    - name: Xác định bản sing-box-extended (cùng nguồn với singbox.sh)
+      id: sbtag
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SB_REPO: shtorm-7/sing-box-extended
+        SB_TAG_INPUT: ${{ inputs.sb_tag }}
+      run: |
+        set -e
+        tag="$SB_TAG_INPUT"
+        if [ -z "$tag" ]; then
+          # singbox.sh tải releases/latest -> build đúng bản đó từ mã nguồn
+          tag=$(curl -sfL --retry 3 -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${SB_REPO}/releases/latest" | jq -r '.tag_name')
+        fi
+        case "$tag" in ''|null|*[!A-Za-z0-9._+-]*) echo "::error::Tag sing-box-extended không hợp lệ: '$tag'"; exit 1 ;; esac
+        echo "tag=$tag" >> "$GITHUB_OUTPUT"
+        echo "::notice::sing-box-extended $tag"
+
+    - name: Checkout mã nguồn sing-box-extended
+      uses: actions/checkout@v4
+      with:
+        repository: shtorm-7/sing-box-extended
+        ref: ${{ steps.sbtag.outputs.tag }}
+        path: sb-src
+        fetch-depth: 1
+        submodules: recursive
+
+    - name: Setup Go (đúng phiên bản theo go.mod của sing-box-extended)
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: sb-src/go.mod
+        cache-dependency-path: sb-src/go.sum
+
+    - name: Build sing-box-extended (mipsle-softfloat, tối giản) và nhúng vào ROM
+      env:
+        SB_TAG: ${{ steps.sbtag.outputs.tag }}
+        SB_EXTRA_TAGS: ${{ inputs.sb_extra_tags }}
+      run: |
+        set -e
+        R=/opt/rt-n56u/trunk
+        W="$GITHUB_WORKSPACE"
+        cd "$W/sb-src"
+
+        ##### Tính năng singbox.sh thực sự dùng -> build tag tương ứng
+        #  with_clash_api : experimental.clash_api (dashboard :9090 + PUT /proxies/select trong force_select_direct)
+        #  with_tailscale : endpoint "tailscale" (ts-ep, system_interface=false)
+        #  with_gvisor    : netstack userspace cho endpoint tailscale
+        #  with_utls      : VLESS Reality / uTLS fingerprint của node trong subscription
+        #  with_quic      : Hysteria2 / TUIC / QUIC transport của node trong subscription
+        #  badlinkname + tfogo_checklinkname0 (+ ldflags -checklinkname=0): bắt buộc với Go>=1.23 khi có quic/utls
+        # Cố ý BỎ để nhẹ: with_wireguard (sh mặc định skip node wireguard), with_dhcp, with_acme,
+        #  with_ccm/with_ocm, with_naive_outbound, with_v2ray_api, with_grpc (gRPC bản lite luôn có sẵn)
+        TAGS="with_clash_api,with_tailscale,with_gvisor,with_utls,with_quic,badlinkname,tfogo_checklinkname0"
+        if [ -n "$SB_EXTRA_TAGS" ]; then
+          printf '%s' "$SB_EXTRA_TAGS" | grep -qE '^[a-z0-9_,]+$' || { echo "::error::sb_extra_tags chỉ nhận a-z 0-9 _ ,"; exit 1; }
+          TAGS="$TAGS,$SB_EXTRA_TAGS"
+        fi
+
+        # Tag with_* không tồn tại trong mã nguồn sẽ bị Go bỏ qua âm thầm -> kiểm tra trước
+        for t in $(echo "$TAGS" | tr ',' '\n' | grep '^with_' | sort -u); do
+          grep -rqE --include='*.go' --exclude-dir=.git "(^|[^a-z0-9_])$t([^a-z0-9_]|\$)" . \
+            || { echo "::error::Mã nguồn $SB_TAG không có build tag $t"; exit 1; }
+        done
+
+        MOD=$(go list -m)
+        VER="${SB_TAG#v}"
+        echo "module=$MOD version=$VER go=$(go version)"
+        echo "tags=$TAGS"
+
+        # singbox.sh đọc 'sing-box version' (>=1.14.0 mới thêm ssh_server) -> bắt buộc gắn đúng số phiên bản
+        mkdir -p /tmp/sb_out
+        CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat \
+        go build -trimpath -tags "$TAGS" \
+          -ldflags "-s -w -buildid= -checklinkname=0 -X ${MOD}/constant.Version=${VER}" \
+          -o /tmp/sb_out/sing-box ./cmd/sing-box
+        B=/tmp/sb_out/sing-box
+
+        ##### Kiểm tra binary
+        file "$B" | tee /tmp/sb_file.txt
+        grep -q 'MIPS' /tmp/sb_file.txt && grep -q 'LSB' /tmp/sb_file.txt || { echo "::error::sing-box không phải ELF MIPS little-endian"; exit 1; }
+        go version -m "$B" | tee /tmp/sb_buildinfo.txt
+        for t in $(echo "$TAGS" | tr ',' '\n'); do
+          grep -E '^\s*build\s+-tags=' /tmp/sb_buildinfo.txt | grep -qE "(=|,)$t(,|\$)" \
+            || { echo "::error::Binary thiếu build tag $t"; exit 1; }
+        done
+
+        # Chạy thử bằng qemu (chỉ cảnh báo, không chặn build): version + check config mô phỏng đúng cấu trúc singbox.sh sinh ra
+        cat > /tmp/sb_check.json <<'CEOF'
+        {
+          "log": { "level": "warn" },
+          "experimental": {
+            "clash_api": { "external_controller": "0.0.0.0:9090", "secret": "" },
+            "cache_file": { "enabled": true, "path": "/tmp/sb_check_cache.db", "store_fakeip": true }
+          },
+          "inbounds": [
+            { "type": "mixed", "tag": "mixed-in", "listen": "0.0.0.0", "listen_port": 7890 },
+            { "type": "redirect", "tag": "redirect-in", "listen": "0.0.0.0", "listen_port": 7892 },
+            { "type": "tproxy", "tag": "tproxy-in", "listen": "0.0.0.0", "listen_port": 7893 },
+            { "type": "direct", "tag": "dns-in", "listen": "0.0.0.0", "listen_port": 5353 }
+          ],
+          "endpoints": [ { "type": "tailscale", "tag": "ts-ep", "state_directory": "/tmp/sb_check_ts", "system_interface": false } ],
+          "dns": {
+            "servers": [
+              { "tag": "dns-remote", "type": "https", "server": "1.1.1.1", "detour": "direct" },
+              { "tag": "dns-direct", "type": "udp", "server": "1.1.1.1", "detour": "direct" },
+              { "tag": "dns-fakeip", "type": "fakeip", "inet4_range": "198.18.0.0/15" }
+            ],
+            "rules": [
+              { "domain_suffix": ["test"], "action": "predefined", "rcode": "NXDOMAIN" },
+              { "query_type": ["A", "AAAA"], "server": "dns-fakeip" }
+            ],
+            "final": "dns-remote"
+          },
+          "route": {
+            "rule_set": [ { "tag": "geoip-vn", "type": "remote", "format": "binary", "url": "https://example.com/geoip-vn.srs", "download_detour": "direct" } ],
+            "rules": [
+              { "inbound": "redirect-in", "action": "sniff" },
+              { "protocol": "dns", "action": "hijack-dns" },
+              { "ip_cidr": ["100.64.0.0/10"], "outbound": "ts-ep" },
+              { "rule_set": "geoip-vn", "action": "reject" },
+              { "ip_is_private": true, "outbound": "direct" }
+            ],
+            "final": "select",
+            "auto_detect_interface": false,
+            "default_mark": 255,
+            "default_domain_resolver": "dns-direct"
+          },
+          "outbounds": [
+            { "type": "vless", "tag": "n-vless", "server": "example.com", "server_port": 443, "uuid": "00000000-0000-0000-0000-000000000000", "flow": "xtls-rprx-vision",
+              "tls": { "enabled": true, "server_name": "example.com", "utls": { "enabled": true, "fingerprint": "chrome" },
+                       "reality": { "enabled": true, "public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "short_id": "0123456789abcdef" } } },
+            { "type": "hysteria2", "tag": "n-hy2", "server": "example.com", "server_port": 443, "password": "x", "tls": { "enabled": true, "server_name": "example.com" } },
+            { "type": "urltest", "tag": "g - Auto", "outbounds": ["n-vless", "n-hy2"] },
+            { "type": "selector", "tag": "select", "outbounds": ["g - Auto", "direct"], "default": "direct" },
+            { "type": "direct", "tag": "direct" }
+          ]
+        }
+        CEOF
+        qemu-mipsel-static "$B" version 2>&1 | head -n8 || echo "::warning::qemu không chạy được sing-box (không chặn build)"
+        if timeout 240 qemu-mipsel-static "$B" check -c /tmp/sb_check.json > /tmp/sb_check.out 2>&1; then
+          echo "sing-box check: config mẫu hợp lệ"
+        else
+          tail -n 15 /tmp/sb_check.out
+          echo "::warning::'sing-box check' báo lỗi với config mẫu của singbox.sh (xem log)"
+        fi
+
+        raw=$(stat -c %s "$B"); z=$(xz -6 -T0 -c "$B" | wc -c)
+        echo "sing-box $SB_TAG: gốc $raw byte -> xz $z byte (xấp xỉ mức chiếm ROM)"
+        echo "::notice::sing-box $SB_TAG tối giản: gốc $((raw/1048576)) MB, xz ~ $((z/1048576)) MB"
+
+        # Không dùng UPX: ROM đã nén sẵn; UPX còn làm binary chiếm RAM thật (không thu hồi được)
+        # Dùng Makefile sẵn của gói singbox: đặt binary cạnh singbox.sh rồi thêm 1 dòng cài vào romfs
+        # (singbox.sh kiểm tra /usr/bin/sing-box trước tiên nên dùng luôn bản nhúng)
+        MK=$(grep -l 'singbox.sh' $R/user/*/Makefile 2>/dev/null | head -n1)
+        [ -n "$MK" ] || { echo "::error::Không tìm thấy Makefile gói singbox trong $R/user"; exit 1; }
+        SD=$(dirname "$MK"); echo "Gói singbox: $SD"
+        install -m 0755 "$B" $SD/sing-box
+        if ! grep -q 'THISDIR)/sing-box ' "$MK"; then
+          [ -z "$(tail -c1 "$MK")" ] || echo >> "$MK"
+          printf '\n\t# 3. Nhung binary sing-box-extended (tu build)\n\t$(ROMFSINST) -p +x $(THISDIR)/sing-box /usr/bin/sing-box\n' >> "$MK"
+        fi
+        tail -n 6 "$MK"
+
+    - name: Build Firmware
+      env:
+        TNAME: NEWIFI3
+        KERNEL: 3.4
+      run: |
+        cd /opt/rt-n56u/trunk
+        cp -f configs/templates/$TNAME.config .config
+        
+        ######################################################################
+        ### TỐI ƯU CẤU HÌNH .CONFIG ĐỂ KHÔNG TRÀN FLASH 32MB ###
+        ######################################################################
+        echo "CONFIG_FIRMWARE_CPU_900MHZ=n" >> .config
+        echo "CONFIG_FIRMWARE_CPU_SLEEP=n" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_IPV6=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_USB=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_FAT=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_EXFAT=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_EXT2=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_EXT3=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_EXT4=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_FUSE=y" >> .config
+        echo "CONFIG_FIRMWARE_ENABLE_SWAP=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_SERIAL=y" >> .config
+        
+        # Bật module phục vụ CAKE & sing-box TProxy
+        echo "CONFIG_FIRMWARE_INCLUDE_IFB=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_IPSET=y" >> .config
+        
+        # Tắt các dịch vụ nặng không dùng để tiết kiệm Flash
+        echo "CONFIG_FIRMWARE_INCLUDE_CADDY=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_FFMPEG_NEW=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_TAILSCALE=y" >> .config  # Dùng Tailscale trong sing-box
+        echo "CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_ARIA=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_MINIDLNA=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_FIREFLY=n" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_XUPNPD=n" >> .config
+        
+        # Tiện ích mạng cần thiết
+        echo "CONFIG_FIRMWARE_INCLUDE_CURL=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_OPENSSH=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_SFTP=y" >> .config
+        
+        # Bật cờ WebUI cho CAKE, sing-box và AdGuardHome
+        echo "CONFIG_FIRMWARE_INCLUDE_SINGBOX=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_ADGUARDHOME=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_CAKE=y" >> .config
+        
+        # Tắt các mục không cần (xoá dòng cũ rồi ghi =n để không bị trùng khoá trong .config)
+        for k in \
+          ENABLE_UFSD \
+          INCLUDE_TCPDUMP INCLUDE_AUDIO INCLUDE_UVC INCLUDE_LPRD INCLUDE_U2EC \
+          INCLUDE_HDPARM INCLUDE_PARTED INCLUDE_OPENVPN INCLUDE_OPENSSL_EXE \
+          INCLUDE_TTYD INCLUDE_IPERF3 INCLUDE_HTOP INCLUDE_NANO \
+          INCLUDE_TUNSAFE INCLUDE_IMQ INCLUDE_QOS INCLUDE_LANG_CN; do
+          sed -i "/^CONFIG_FIRMWARE_${k}=/d; /^# CONFIG_FIRMWARE_${k} is not set/d" .config
+          echo "CONFIG_FIRMWARE_${k}=n" >> .config
+        done
+        grep -E 'CONFIG_FIRMWARE_(ENABLE_UFSD|INCLUDE_(FTPD|TCPDUMP|AUDIO|UVC|OPENVPN|TTYD|IMQ|QOS|TUNSAFE|LANG_CN))' .config
+        
+        ######################################################################
+        sudo ./clear_tree
+        sudo ./build_firmware_modify $TNAME 0
+        ##### Kiểm tra tc + kernel CAKE thật sự có trong ROM (INCLUDE_QOS=n không được làm mất)
+        if [ -d romfs ]; then
+          [ -n "$(find romfs \( -type f -o -type l \) -name tc 2>/dev/null | head -n1)" ] || { echo "::error::romfs thiếu binary tc"; exit 1; }
+        fi
+        ##### Kiểm tra sing-box thật sự nằm trong ROM
+        if [ -d romfs ]; then
+          SBF=$(find romfs \( -type f -o -type l \) -name sing-box 2>/dev/null | head -n1)
+          [ -n "$SBF" ] || { echo "::error::romfs thiếu /usr/bin/sing-box (dòng cài sing-box trong Makefile gói singbox chưa chạy)"; exit 1; }
+          echo "sing-box trong romfs: $SBF ($(stat -c %s "$SBF") byte)"
+        fi
+        for o in NET_SCH_CAKE NET_SCH_INGRESS IFB NET_ACT_MIRRED NET_CLS_U32; do
+          grep -q "^CONFIG_$o=[ym]" linux-3.4.x/.config || { echo "::error::kernel thiếu CONFIG_$o"; exit 1; }
+        done
+        grep -q '^CONFIG_NET_SCH_FQ_CODEL=[ym]' linux-3.4.x/.config || echo "::warning::kernel không có fq_codel (dự phòng sẽ dùng sfq)"
+        grep -q '^CONFIG_NET_SCH_SFQ=[ym]' linux-3.4.x/.config || echo "::warning::kernel không có sfq"
+        grep -q '^CONFIG_NET_SCH_HTB=[ym]' linux-3.4.x/.config || echo "::warning::kernel không có htb"
+        sudo mv -f images/*.trx /opt/images/
+        
+        ##### KIỂM TRA ROM CÓ VỪA PHÂN VÙNG FLASH KHÔNG (đọc kích thước từ kernel config, không gõ cứng)
+        KC=/opt/rt-n56u/trunk/configs/boards/NEWIFI3/kernel-3.4.x.config
+        cfg() { v=$(grep -E "^CONFIG_$1=" "$KC" | head -n1 | cut -d= -f2); echo $((${v:-0})); }
+        FLASH=$((32 * 1024 * 1024))
+        STORE=$(cfg MTD_STORE_PART_SIZ)
+        HEAD=$(( $(cfg MTD_BOOT_PART_SIZ) + $(cfg MTD_CONFIG_PART_SIZ) + $(cfg MTD_FACTORY_PART_SIZ) ))
+        [ "$HEAD" -gt 0 ] || HEAD=$((0x50000))
+        [ "$STORE" -gt 0 ] || STORE=$((0x800000))
+        FWMAX=$((FLASH - HEAD - STORE))
+        echo "Bố cục flash: đầu(boot+config+factory)=$HEAD  storage=$STORE  firmware tối đa=$FWMAX byte"
+        echo "::notice::Đổi kích thước Storage làm đổi phân vùng Firmware. Lần flash đầu nên dùng bootloader (Breed/U-Boot), cấu hình cũ sẽ bị reset."
+
+        for f in /opt/images/*.trx; do
+          SZ=$(stat -c %s "$f")
+          echo "=========================================================="
+          echo "Firmware $(basename "$f"): $SZ / $FWMAX byte ($((SZ * 100 / FWMAX))%)"
+          echo "Còn trống: $((FWMAX - SZ)) byte"
+          echo "=========================================================="
+          if [ "$SZ" -gt "$FWMAX" ]; then
+            echo "::error::Firmware lớn hơn phân vùng Flash ($SZ > $FWMAX). HỦY BUILD!"
+            exit 1
+          fi
+        done
+
+        echo "=== Top 25 file lớn nhất trong romfs (gốc -> xz) ==="
+        if [ -d romfs ]; then
+          find romfs -type f -size +200k -printf '%s %p\n' | sort -nr | head -n 25 | while read s p; do
+            z=$(xz -6 -T0 -c "$p" | wc -c)
+            printf '%9d -> %9d  %s\n' "$s" "$z" "$p"
+          done
+        fi
+
+        cp -f .config /opt/images/${TNAME}.config
+        echo "build_time=$(date '+%Y年%m月%d日%H:%M:%S' | jq -sRr @uri)" >> $GITHUB_ENV
+        echo "tag=$(date '+%Y-%m-%d')" >> $GITHUB_ENV
+
+    - name: Upload packages
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: NEWIFI3
+        path: /opt/images
+
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        body: |
+           > ### Firmware Newifi 3 D2 tích hợp CAKE SQM + sing-box-extended (nhúng ROM); AdGuardHome tự tải vào RAM khi bật
+           > Lưu ý: bản này đổi bố cục phân vùng (Storage 8MB, ROM tối đa ~23.7MB). Nên sao lưu cấu hình trước khi flash; cấu hình cũ sẽ bị reset.
+        tag_name: ${{ env.tag }}
+        files: /opt/images/*
